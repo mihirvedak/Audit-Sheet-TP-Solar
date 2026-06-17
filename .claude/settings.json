@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:3004)",
+      "Bash(curl -s http://localhost:3004 -o /tmp/dash.html -w \"HTTP %{http_code}\\\\n\")",
+      "Bash(curl -s http://localhost:3004 -o /tmp/dash2.html -w \"HTTP %{http_code}\\\\n\")",
+      "Bash(sort -t'#' -k2 -n -u)",
+      "Bash(curl -s http://localhost:3004 -o /tmp/dash3.html -w \"HTTP %{http_code}\\\\n\")",
+      "Bash(grep -o \"border-t-amber-400[^\\\\\"]*\\\\\"[^>]*>.\\\\{0,400\\\\}\" /tmp/dash3.html)",
+      "Bash(curl -s http://localhost:3004 -o /dev/null -w \"HTTP %{http_code}\\\\n\")",
+      "mcp__playwright__browser_select_option",
+      "Bash(curl -s http://localhost:3004)",
+      "Bash(curl -s -o /dev/null -w \"3000 → HTTP %{http_code}\\\\n\" http://localhost:3000)",
+      "Bash(curl -s http://localhost:3000)",
+      "Bash(netstat -ltnp)",
+      "Bash(curl -s -o /dev/null -w \"localhost:3004 → HTTP %{http_code}\\\\n\" http://localhost:3004)",
+      "Bash(curl -sk -o /dev/null -w \"public → HTTP %{http_code}\\\\n\" \"https://app-496c5aef.iocompute.ai/\")",
+      "Bash(node -e \"const s=require\\('fs'\\).readFileSync\\('src/lib/dashboardData.ts','utf8'\\); const m=s.match\\(/const RAW: Raw\\\\[\\\\] = \\\\[\\([\\\\s\\\\S]*?\\)\\\\n\\\\];/\\)[1]; const lines=m.split\\('\\\\n'\\).filter\\(l=>l.trim\\(\\).length && l.trim\\(\\)!==''\\); console.log\\('RAW item lines:', lines.length\\);\")",
+      "Bash(curl -s -o /dev/null -w \"local → HTTP %{http_code}\\\\n\" http://localhost:3004)"
+    ]
+  }
+}
