@@ -55,6 +55,10 @@ function computeDownscale(sTime: number, eTime: number): number {
 }
 
 let cachedToken: string | null = null;
+// The last SSO token we successfully exchanged — lets us refresh on each new
+// dashboard open (new token) without re-consuming the same one-time token
+// during a single session (window changes reuse the cached Bearer).
+let lastSso: string | null = null;
 
 async function login(): Promise<string> {
   if (!USER || !PASS) {
@@ -116,13 +120,29 @@ async function exchangeSSO(ssoToken: string): Promise<string> {
  */
 async function getToken(ssoToken?: string, force = false): Promise<string> {
   if (STATIC_TOKEN) return STATIC_TOKEN;
+
+  // A newly-arrived SSO token (fresh dashboard open) → exchange it immediately
+  // and refresh the saved token, so we never depend on a stale/expired one.
+  // The same token within a session is not re-exchanged (it's one-time use).
+  if (ssoToken && ssoToken !== lastSso) {
+    try {
+      const t = await exchangeSSO(ssoToken);
+      lastSso = ssoToken;
+      return t;
+    } catch {
+      // fresh token already consumed/invalid → fall through to cache/login
+    }
+  }
+
   if (!force) {
     if (!cachedToken) cachedToken = loadPersistedToken();
     if (cachedToken) return cachedToken;
   }
   if (ssoToken) {
     try {
-      return await exchangeSSO(ssoToken);
+      const t = await exchangeSSO(ssoToken);
+      lastSso = ssoToken;
+      return t;
     } catch (e) {
       // Only fall back to credential login if we actually have credentials;
       // otherwise surface the SSO failure so it's diagnosable.
