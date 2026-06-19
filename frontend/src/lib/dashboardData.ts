@@ -5,7 +5,12 @@
 // window; configured cards (rows 1–23) compute Σ sensors ÷ production and will
 // use IOsense getAutoSampled once connected.
 
-import { CARD_CONFIGS, type CardConfig } from "./cardConfigs";
+import {
+  CARD_CONFIGS,
+  FORMULA_CONFIGS,
+  type CardConfig,
+  type FormulaConfig,
+} from "./cardConfigs";
 import { LIVE_CONFIGS, type LiveConfig } from "./liveConfigs";
 
 export type CardKind = "value" | "status";
@@ -23,6 +28,7 @@ export interface CardItem {
   category: Category;
   config?: CardConfig;
   liveConfig?: LiveConfig;
+  formula?: FormulaConfig;
 }
 
 export type Reading = { value: string; health: Health };
@@ -284,7 +290,7 @@ Object.assign(UNIT_BY_ROW, {
   74: "%", 75: "%", 76: "%", 77: "%", 78: "%", 79: "%", 80: "%", 81: "%",
   82: "kW/TR", 83: "kW/TR", 84: "kWh/m3", 85: "kWh/m3",
   110: "ML", 111: "%", 112: "ML", 113: "%", 114: "kL", 115: "%", 116: "kL",
-  117: "%", 118: "MLD", 119: "kL", 120: "MLD", 121: "kL", 122: "kL", 123: "kL",
+  117: "%", 118: "kL", 119: "kL", 120: "kL", 121: "kL", 122: "kL", 123: "kL",
   124: "kL", 125: "kL", 126: "kL", 127: "kL", 128: "kL", 129: "kL", 130: "%",
   131: "%", 132: "kL", 133: "kL", 134: "kL",
 });
@@ -452,7 +458,13 @@ function build(): CardItem[] {
     const c = makeCard(row, label);
     const config = CARD_CONFIGS[row];
     const liveConfig = LIVE_CONFIGS[row];
-    return { ...c, ...(config ? { config } : {}), ...(liveConfig ? { liveConfig } : {}) };
+    const formula = FORMULA_CONFIGS[row];
+    return {
+      ...c,
+      ...(config ? { config } : {}),
+      ...(liveConfig ? { liveConfig } : {}),
+      ...(formula ? { formula } : {}),
+    };
   });
 }
 

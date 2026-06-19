@@ -44,12 +44,16 @@ const fmtTs = (s: string | null): string =>
         month: "short",
         hour: "2-digit",
         minute: "2-digit",
+        hour12: false, // 24-hour clock
       })
     : "";
 
 // Human-readable "how this value was calculated" line from the sensor rows.
 function calcSummary(card: CardItem, rows: SensorBreakdown[], value: string): string {
   const u = card.unit ? ` ${card.unit}` : "";
+  if (card.formula) {
+    return `Σ of ${rows.length} chillers — consumption ÷ TR, where TR = ${card.formula.powerDiv} × ΔT ÷ ${card.formula.deltaDiv} (running-hours weighted) = ${value}${u}`;
+  }
   const live = card.liveConfig;
   if (live) {
     if (live.op === "constant") return `Fixed value = ${value}${u}`;
@@ -144,24 +148,78 @@ function InfoButton({
               </span>
               {calcSummary(card, rows, value)}
             </div>
-            {card.liveConfig ? (
-              // Live cards: just the device/sensor IDs used.
-              <div>
-                <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-400">
-                  Device · Sensor
-                </div>
-                <ul className="space-y-1">
+            {card.formula ? (
+              // Formula (chiller) cards: per-chiller avg power, ΔT, contribution.
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="text-left text-[10px] uppercase tracking-wide text-zinc-400">
+                    <th className="py-1 pr-2 font-medium">Chiller</th>
+                    <th className="py-1 px-1 text-right font-medium">Consumption</th>
+                    <th className="py-1 px-1 text-right font-medium">TR</th>
+                    <th className="py-1 pl-1 text-right font-medium">Contribution</th>
+                  </tr>
+                </thead>
+                <tbody>
                   {rows.map((r, idx) => (
-                    <li
+                    <tr
                       key={`${r.device}:${r.sensor}:${idx}`}
-                      className="font-mono text-[11px] text-zinc-700 dark:text-zinc-300"
+                      className="border-t border-zinc-100 align-top dark:border-zinc-800"
                     >
-                      {r.device}
-                      <span className="text-zinc-400">·{r.sensor}</span>
-                    </li>
+                      <td className="py-1 pr-2">
+                        <span className="text-zinc-700 dark:text-zinc-300">{r.device}</span>
+                        <div className="font-mono text-[10px] text-zinc-400">{r.sensor}</div>
+                        {!r.hasData && (
+                          <span className="text-[10px] text-rose-500">no data</span>
+                        )}
+                      </td>
+                      <td className="py-1 px-1 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
+                        {fmtNum(r.firstVal)}
+                      </td>
+                      <td className="py-1 px-1 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
+                        {fmtNum(r.lastVal)}
+                      </td>
+                      <td className="py-1 pl-1 text-right font-semibold tabular-nums text-indigo-600 dark:text-indigo-300">
+                        {fmtNum(r.consumption)}
+                      </td>
+                    </tr>
                   ))}
-                </ul>
-              </div>
+                </tbody>
+              </table>
+            ) : card.liveConfig ? (
+              // Live cards: raw latest reading + its timestamp per sensor.
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="text-left text-[10px] uppercase tracking-wide text-zinc-400">
+                    <th className="py-1 pr-2 font-medium">Device · Sensor</th>
+                    <th className="py-1 px-1 text-right font-medium">Raw value</th>
+                    <th className="py-1 pl-1 text-right font-medium">Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, idx) => (
+                    <tr
+                      key={`${r.device}:${r.sensor}:${idx}`}
+                      className="border-t border-zinc-100 align-top dark:border-zinc-800"
+                    >
+                      <td className="py-1 pr-2">
+                        <span className="font-mono text-[11px] text-zinc-700 dark:text-zinc-300">
+                          {r.device}
+                          <span className="text-zinc-400">·{r.sensor}</span>
+                        </span>
+                        {!r.hasData && (
+                          <span className="ml-1 text-[10px] text-rose-500">no data</span>
+                        )}
+                      </td>
+                      <td className="py-1 px-1 text-right font-semibold tabular-nums text-indigo-600 dark:text-indigo-300">
+                        {fmtNum(r.lastVal)}
+                      </td>
+                      <td className="py-1 pl-1 text-right tabular-nums text-[10px] text-zinc-500 dark:text-zinc-400">
+                        {fmtTs(r.lastTs) || "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             ) : (
               <table className="w-full border-collapse">
                 <thead>

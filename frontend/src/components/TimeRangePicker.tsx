@@ -132,11 +132,9 @@ const fmtDateInput = (d: Date) =>
 const fmtRangeLabel = (d: Date) =>
   `${pad(d.getDate())} ${MONTHS[d.getMonth()].slice(0, 3)} ${d.getFullYear()}`;
 
-function fmt12(d: Date): string {
-  let h = d.getHours();
-  const ampm = h >= 12 ? "PM" : "AM";
-  h = h % 12 || 12;
-  return `${pad(h)}:${pad(d.getMinutes())} ${ampm}`;
+// 24-hour clock display, e.g. 14:44.
+function fmt24(d: Date): string {
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function parseDateInput(s: string): Date | null {
@@ -229,15 +227,9 @@ function TimeField({
   }, [open, place]);
 
   const h24 = value.getHours();
-  const ampm = h24 >= 12 ? "PM" : "AM";
-  const h12 = h24 % 12 || 12;
   const min = value.getMinutes();
 
-  const apply = (nh12: number, nmin: number, nap: "AM" | "PM") => {
-    let h = nh12 % 12;
-    if (nap === "PM") h += 12;
-    onChange(h, nmin);
-  };
+  const apply = (nh24: number, nmin: number) => onChange(nh24, nmin);
 
   const cell = (active: boolean) =>
     `cursor-pointer rounded px-2 py-1 text-center text-sm transition ${
@@ -256,7 +248,7 @@ function TimeField({
         onClick={() => setOpen((o) => !o)}
         className={`${INPUT_CLS} flex items-center justify-between`}
       >
-        <span>{fmt12(value)}</span>
+        <span>{fmt24(value)}</span>
         <span className="flex items-center gap-1.5">
           <ClockIcon className="h-4 w-4 text-zinc-400" />
           <ClockIcon className="h-4 w-4 text-zinc-500" />
@@ -275,8 +267,8 @@ function TimeField({
             <div className="flex flex-col">
               <span className={colHead}>Hr</span>
               <ul className="max-h-44 w-12 overflow-y-auto">
-                {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
-                  <li key={h} className={cell(h === h12)} onClick={() => apply(h, min, ampm)}>
+                {Array.from({ length: 24 }, (_, i) => i).map((h) => (
+                  <li key={h} className={cell(h === h24)} onClick={() => apply(h, min)}>
                     {pad(h)}
                   </li>
                 ))}
@@ -286,26 +278,11 @@ function TimeField({
               <span className={colHead}>Min</span>
               <ul className="max-h-44 w-12 overflow-y-auto">
                 {Array.from({ length: 60 }, (_, i) => i).map((m) => (
-                  <li key={m} className={cell(m === min)} onClick={() => apply(h12, m, ampm)}>
+                  <li key={m} className={cell(m === min)} onClick={() => apply(h24, m)}>
                     {pad(m)}
                   </li>
                 ))}
               </ul>
-            </div>
-            <div className="flex flex-col">
-              <span className={colHead}>AM/PM</span>
-              <div className="flex flex-col gap-1">
-                {(["AM", "PM"] as const).map((ap) => (
-                  <button
-                    key={ap}
-                    type="button"
-                    className={cell(ap === ampm)}
-                    onClick={() => apply(h12, min, ap)}
-                  >
-                    {ap}
-                  </button>
-                ))}
-              </div>
             </div>
           </div>,
           document.body,
@@ -318,11 +295,9 @@ function TimeField({
 
 export default function TimeRangePicker({
   value,
-  now,
   onApply,
 }: {
   value: TimeRange;
-  now: Date;
   onApply: (r: TimeRange) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -398,7 +373,9 @@ export default function TimeRangePicker({
   function choosePreset(label: string) {
     setPreset(label);
     if (label === "Custom") return;
-    const r = computeRange(label, now);
+    // Use the live current time (not the page-load anchor) so presets like
+    // "Today" / "Current Week" end at the actual current clock time, e.g. 14:44.
+    const r = computeRange(label, new Date());
     if (!r) return;
     setDraftStart(r.start);
     setDraftEnd(r.end);

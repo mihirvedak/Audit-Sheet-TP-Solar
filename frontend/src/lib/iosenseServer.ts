@@ -44,14 +44,15 @@ interface DevCfg {
   downscale: number;
 }
 
-// Aggressive downscale → tiny payloads (we only need first/last per sensor).
+// Aggressive downscale → tiny payloads. Cards only need first/last (delta), an
+// average (temps), or the latest value, so a few hundred samples per sensor is
+// plenty regardless of window length. `downscale` ≈ seconds between returned
+// points; we size it so each sensor returns ~TARGET_POINTS samples. This keeps
+// the response small (and fast to transfer + parse) even for month/year windows.
+const TARGET_POINTS = 240;
 function computeDownscale(sTime: number, eTime: number): number {
-  const hours = (eTime - sTime) / (1000 * 60 * 60);
-  if (hours <= 24) return 30;
-  if (hours <= 24 * 7) return 90;
-  if (hours <= 24 * 31) return 300;
-  if (hours <= 24 * 93) return 600;
-  return 1200;
+  const seconds = Math.max(1, (eTime - sTime) / 1000);
+  return Math.max(30, Math.round(seconds / TARGET_POINTS));
 }
 
 let cachedToken: string | null = null;

@@ -17,10 +17,12 @@ export async function POST(req: Request) {
     if (!Array.isArray(pairs) || pairs.length === 0 || !sTime || !eTime) {
       return Response.json({ error: "bad request" }, { status: 400 });
     }
-    // Windowed data first (this also ensures/refreshes the auth token), then
-    // the latest data point per sensor as a fallback for empty windows.
-    const data = await fetchSensorsServer(pairs, sTime, eTime, ssoToken);
-    const lastDPs = await fetchLastDPs(pairs, ssoToken);
+    // Windowed data + the latest-DP fallback are independent → fetch in parallel
+    // so the slower one doesn't stack on top of the other.
+    const [data, lastDPs] = await Promise.all([
+      fetchSensorsServer(pairs, sTime, eTime, ssoToken),
+      fetchLastDPs(pairs, ssoToken),
+    ]);
     return Response.json({ data, lastDPs });
   } catch (err) {
     return Response.json(

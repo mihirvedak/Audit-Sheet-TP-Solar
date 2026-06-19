@@ -35,6 +35,81 @@ function term(token: string): SourceTerm {
 }
 const terms = (tokens: string[]): SourceTerm[] => tokens.map(term);
 
+/* ------------------------------------------------------------------ */
+/* Formula cards — custom arithmetic that the numerator/divisor model   */
+/* can't express. Currently: chiller-load sum (CH_CELL_01).             */
+/* ------------------------------------------------------------------ */
+
+/** One chiller's contribution = consumption ÷ TR, where TR is derived from the
+ *  supply/return temperatures (and, when wired, running hours via the status flag). */
+export interface ChillerTerm {
+  power: SourceTerm; // consumption meter → last−first delta over the window
+  supply: SourceTerm; // TR inlet / supply temperature (averaged)
+  ret: SourceTerm; // TR outlet / return temperature (averaged)
+  status?: SourceTerm; // running flag (D37 == 1) → enables running-hours-weighted TR
+}
+
+export interface FormulaConfig {
+  kind: "chillerSum";
+  /** Multiplier on ΔT in the denominator (810 / 850). */
+  powerDiv: number;
+  /** Denominator divisor (3.024). */
+  deltaDiv: number;
+  chillers: ChillerTerm[];
+}
+
+const chiller = (
+  power: string,
+  supply: string,
+  ret: string,
+  status?: string,
+): ChillerTerm => ({
+  power: term(power),
+  supply: term(supply),
+  ret: term(ret),
+  ...(status ? { status: term(status) } : {}),
+});
+
+// Keyed by sheet row. Each chiller term, summed:
+//   consumption ÷ ((powerDiv × (avg supplyT − avg returnT)) ÷ deltaDiv)
+// where consumption = the power meter's last−first delta over the window, and
+// the supply/return temperatures are averaged.
+// CH_CELL_01 powerDiv 810, CH_MOD_01 powerDiv 850; deltaDiv 3.024.
+export const FORMULA_CONFIGS: Record<number, FormulaConfig> = {
+  // 82 — CH_CELL_01: sum of 7 chillers. TR per chiller is running-hours-weighted
+  // (status D37 == 1) off the TPSLCH_* inlet/outlet temps; trBase = powerDiv = 810.
+  // chiller(powerMeter, trInlet, trOutlet, statusD37)
+  82: {
+    kind: "chillerSum",
+    powerDiv: 810,
+    deltaDiv: 3.024,
+    chillers: [
+      chiller("TPSGHTCSS_W1(D410)", "TPSLCH_A(D16)", "TPSLCH_A(D22)", "TPSLCH_A(D37)"), // Chiller 1
+      chiller("TPSGHTCSS_W1(D462)", "TPSLCH_B(D8)", "TPSLCH_B(D14)", "TPSLCH_B(D37)"), // Chiller 2
+      chiller("TPSGHTCSS_X1(D72)", "TPSLCH_C(D9)", "TPSLCH_C(D15)", "TPSLCH_C(D37)"), // Chiller 3
+      chiller("TPSGHTCSS_X1(D180)", "TPSLCH_D(D9)", "TPSLCH_D(D15)", "TPSLCH_D(D37)"), // Chiller 4
+      chiller("TPSGHTCSS_X1(D447)", "TPSLCH_E(D9)", "TPSLCH_E(D15)", "TPSLCH_E(D37)"), // Chiller 5
+      chiller("TPSGHTCSS_Y1(D214)", "TPSLCH_F(D9)", "TPSLCH_F(D15)", "TPSLCH_F(D37)"), // Chiller 6
+      chiller("TPSGHTCSS_Y1(D268)", "TPSLCH_G(D9)", "TPSLCH_G(D15)", "TPSLCH_G(D37)"), // Chiller 7
+    ],
+  },
+
+  // 83 — CH_MOD_01: sum of 4 chillers. trBase = 810 (same as CH_CELL_01). TR is
+  // running-hours-weighted off the TPSGMHVAC_* D25/D26 temps; status flag = D0
+  // (1 = Running). chiller(powerMeter, trInlet D25, trOutlet D26, statusD0)
+  83: {
+    kind: "chillerSum",
+    powerDiv: 810, // trBase for TR = 810 × ΔT ÷ 3.024
+    deltaDiv: 3.024,
+    chillers: [
+      chiller("TPSGHTCSS_M1(D442)", "TPSGMHVAC_A14(D25)", "TPSGMHVAC_A14(D26)", "TPSGMHVAC_A14(D0)"), // Chiller 1
+      chiller("TPSGHTCSS_N1(D2)", "TPSGMHVAC_A15(D25)", "TPSGMHVAC_A15(D26)", "TPSGMHVAC_A15(D0)"), // Chiller 2
+      chiller("TPSGHTCSS_N1(D295)", "TPSGMHVAC_A16(D25)", "TPSGMHVAC_A16(D26)", "TPSGMHVAC_A16(D0)"), // Chiller 3
+      chiller("TPSGHTCSS_P1(D206)", "TPSGMHVAC_A17(D25)", "TPSGMHVAC_A17(D26)", "TPSGMHVAC_A17(D0)"), // Chiller 4
+    ],
+  },
+};
+
 const CELL = "CELL_PRODUCTION_A1(D0)";
 const MODULE = "MODULE_PRODUCTION_A1(D0)";
 
@@ -411,7 +486,7 @@ export const CARD_CONFIGS: Record<number, CardConfig> = {
   62: { metric: "consumption", method: "getAutoSampled",
     numerator: terms(["TPMSTPFM_A1(D1)"]) },
 
-  // 118 — WC_CELL_SIPCOT (MLD)
+  // 118 — WC_CELL_SIPCOT (kL)
   118: { metric: "consumption", method: "getAutoSampled",
     numerator: terms(["TPSUPWFM_A1(D1)"]) },
 
@@ -422,7 +497,7 @@ export const CARD_CONFIGS: Record<number, CardConfig> = {
       "TPSGCZLD_A6(D43)", "TPSETPFM_A1(D3)", "TPSETPFM_A1(D9)",
     ]) },
 
-  // 120 — WC_MOD_SIPCOT (MLD)
+  // 120 — WC_MOD_SIPCOT (kL)
   120: { metric: "consumption", method: "getAutoSampled",
     numerator: terms(["TPMWTPFM_A1(D1)"]) },
 

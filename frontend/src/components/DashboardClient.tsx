@@ -5,6 +5,7 @@ import { type CardItem, type Category } from "@/lib/dashboardData";
 import {
   breakdownForCard,
   computeCardValue,
+  computeFormulaValue,
   computeLiveValue,
   fetchSensors,
   pairsForCard,
@@ -16,6 +17,20 @@ import TimeRangePicker, {
   computeRange,
   type TimeRange,
 } from "./TimeRangePicker";
+
+// Presets whose end is "now" — their window must keep advancing with the clock
+// so the data refreshes as real time moves forward.
+const LIVE_PRESETS = new Set([
+  "Today",
+  "Current Week",
+  "Previous 7 Days",
+  "Current Month",
+  "Previous 3 Months",
+  "Previous 12 Months",
+  "Current Year",
+]);
+// How often a now-anchored window re-extends to the current time (ms).
+const LIVE_REFRESH_MS = 30_000;
 
 export default function DashboardClient({ cards }: { cards: CardItem[] }) {
   const [query, setQuery] = useState("");
@@ -72,17 +87,28 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
   );
   const [errorMsg, setErrorMsg] = useState<string>("");
 
-  useEffect(() => {
-    const configured = cards.filter((c) => c.config || c.liveConfig);
-    if (configured.length === 0) return;
+  // Identity of the window currently displayed. A now-anchored auto-refresh
+  // (only the end advanced) re-fetches WITHOUT clearing the visible values;
+  // a genuine window change (preset/start/periodicity) clears and reloads.
+  const prevWindowRef = useRef<string>("");
 
-    // Compute a card's value from the fetched map (consumption vs. live).
-    const valueOf = (c: CardItem, map: Map<string, SensorPoint>) =>
-      c.config ? computeCardValue(c, map) : computeLiveValue(c, map);
+  useEffect(() => {
+    const configured = cards.filter((c) => c.config || c.liveConfig || c.formula);
+    if (configured.length === 0) return;
 
     let cancelled = false;
     const sTime = range.start.getTime();
     const eTime = range.end.getTime();
+    // Window context for formula (chiller TR) cards: bucketing uses the period.
+    const ctx = { startMs: sTime, endMs: eTime, period: range.periodicity };
+
+    // Compute a card's value from the fetched map (consumption / formula / live).
+    const valueOf = (c: CardItem, map: Map<string, SensorPoint>) =>
+      c.config
+        ? computeCardValue(c, map, ctx)
+        : c.formula
+          ? computeFormulaValue(c, map, ctx)
+          : computeLiveValue(c, map);
 
     // Unique device/sensor pairs across all configured cards (one batched call).
     const seen = new Set<string>();
@@ -98,10 +124,17 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
     }
 
     // Fresh window → clear values so resolved cards repopulate (others show "…").
-    setLiveValues(new Map());
-    setBreakdowns(new Map());
+    // But a now-anchored tick (same preset/start/periodicity, only the end moved
+    // forward) refreshes silently: keep the old values until the new ones land.
+    const windowKey = `${range.presetLabel}|${range.start.getTime()}|${range.periodicity}`;
+    const silent = prevWindowRef.current === windowKey;
+    prevWindowRef.current = windowKey;
+    if (!silent) {
+      setLiveValues(new Map());
+      setBreakdowns(new Map());
+      setFetchState("loading");
+    }
     setErrorMsg("");
-    setFetchState("loading");
 
     // A card is renderable once all its sensors are in the map.
     const complete = (c: CardItem, map: Map<string, SensorPoint>) =>
@@ -115,7 +148,7 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
       for (const c of configured) {
         if (complete(c, map)) {
           nv.set(c.id, valueOf(c, map));
-          nb.set(c.id, breakdownForCard(c, map));
+          nb.set(c.id, breakdownForCard(c, map, undefined, ctx));
         }
       }
       setLiveValues(nv);
@@ -134,7 +167,7 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
         // Only sensor-backed cards count as "real data" (constants always resolve).
         if (val !== "NA" && pairsForCard(c).length > 0) gotAny = true;
         nv.set(c.id, val);
-        nb.set(c.id, breakdownForCard(c, map, lastDPs));
+        nb.set(c.id, breakdownForCard(c, map, lastDPs, ctx));
       }
       setLiveValues(nv);
       setBreakdowns(nb);
@@ -154,10 +187,24 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
     };
   }, [cards, range]);
 
+  // Now-anchored presets (Today, Current Month, …) keep their end at the live
+  // clock: on each tick we recompute the range so its window — and therefore the
+  // fetched data — advances with real time (e.g. 3:01 → 3:09).
+  useEffect(() => {
+    const label = range.presetLabel;
+    if (!LIVE_PRESETS.has(label)) return;
+    const id = setInterval(() => {
+      const r = computeRange(label, new Date());
+      if (!r) return;
+      setRange((prev) => ({ ...prev, start: r.start, end: r.end }));
+    }, LIVE_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [range.presetLabel]);
+
   // Value shown on a card: each card pops in as its own fetch resolves. A card
   // not yet resolved shows "…" while loading, else NA.
   function valueFor(card: CardItem): string {
-    if (!card.config && !card.liveConfig) return "NA";
+    if (!card.config && !card.liveConfig && !card.formula) return "NA";
     const v = liveValues.get(card.id);
     if (v !== undefined) return v;
     return fetchState === "loading" ? "…" : "NA";
@@ -267,7 +314,7 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
             </div>
 
             {/* Global duration picker — always rendered (present in SSR HTML) */}
-            <TimeRangePicker value={range} now={anchor} onApply={setRange} />
+            <TimeRangePicker value={range} onApply={setRange} />
           </div>
 
           {/* Tabs */}
