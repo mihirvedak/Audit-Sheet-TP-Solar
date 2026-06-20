@@ -4,15 +4,64 @@
 // once and never re-enters a token. The browser only talks to /api/iosense.
 
 import { readFileSync, writeFileSync } from "fs";
+import { resolve } from "path";
 
+// This custom Next.js build does NOT load .env.local into the server runtime,
+// so process.env.IOSENSE_* can be empty even though the file exists — which made
+// login fail with "credentials not configured". Load the env files ourselves at
+// startup so credentials are ALWAYS available and the dashboard can authenticate
+// without any token pre-seeded. Existing process.env values win (never override).
+function loadEnvFiles(): void {
+  for (const file of [".env.local", ".env", "frontend/.env.local", "frontend/.env"]) {
+    let txt: string;
+    try {
+      txt = readFileSync(resolve(process.cwd(), file), "utf8");
+    } catch {
+      continue;
+    }
+    for (const raw of txt.split("\n")) {
+      const line = raw.trim();
+      if (!line || line.startsWith("#")) continue;
+      const eq = line.indexOf("=");
+      if (eq === -1) continue;
+      const k = line.slice(0, eq).trim();
+      let v = line.slice(eq + 1).trim();
+      v = v.replace(/^["']|["']$/g, ""); // strip surrounding quotes
+      if (k && process.env[k] === undefined) process.env[k] = v;
+    }
+  }
+}
+loadEnvFiles();
+
+// Read AFTER loadEnvFiles() so values from .env.local are picked up.
 const BASE = process.env.IOSENSE_BASE_URL || "https://connector.iosense.io/api";
 const ORG = process.env.IOSENSE_ORG || "https://iosense.io";
 const USER = process.env.IOSENSE_USERNAME || "";
 const PASS = process.env.IOSENSE_PASSWORD || "";
 // Optional: use a ready-made token instead of username/password login.
 const STATIC_TOKEN = process.env.IOSENSE_TOKEN || "";
-// Where the exchanged long-lived token is persisted across restarts.
-const TOKEN_FILE = process.env.IOSENSE_TOKEN_FILE || "/tmp/iosense-auth-token.txt";
+// Where the exchanged token is persisted. Default to a project-relative file so
+// it survives machine reboots (/tmp is cleared on reboot, which would drop the
+// token and — with no stored credentials — break auth). Migrate any legacy
+// /tmp token into the durable location on startup.
+const TOKEN_FILE =
+  process.env.IOSENSE_TOKEN_FILE ||
+  resolve(process.cwd(), ".iosense-auth-token");
+const LEGACY_TOKEN_FILE = "/tmp/iosense-auth-token.txt";
+(function migrateLegacyToken() {
+  try {
+    readFileSync(TOKEN_FILE, "utf8");
+    return; // durable token already present
+  } catch {
+    /* fall through */
+  }
+  try {
+    const legacy = readFileSync(LEGACY_TOKEN_FILE, "utf8").trim();
+    if (legacy) writeFileSync(TOKEN_FILE, legacy, "utf8");
+  } catch {
+    /* nothing to migrate */
+  }
+})();
 
 function loadPersistedToken(): string | null {
   try {
@@ -150,7 +199,16 @@ async function getToken(ssoToken?: string, force = false): Promise<string> {
       if (!USER || !PASS) throw e;
     }
   }
-  return login();
+  // Credential login. If it fails transiently, degrade to any token we already
+  // have (cached in memory or persisted on disk) rather than erroring the whole
+  // dashboard — a stale token still beats "credentials not configured".
+  try {
+    return await login();
+  } catch (e) {
+    const fallback = cachedToken || loadPersistedToken();
+    if (fallback) return fallback;
+    throw e;
+  }
 }
 
 async function putChunk(
