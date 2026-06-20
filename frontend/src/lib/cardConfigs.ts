@@ -49,7 +49,7 @@ export interface ChillerTerm {
   status?: SourceTerm; // running flag (D37 == 1) → enables running-hours-weighted TR
 }
 
-export interface FormulaConfig {
+export interface ChillerSumConfig {
   kind: "chillerSum";
   /** Multiplier on ΔT in the denominator (810 / 850). */
   powerDiv: number;
@@ -57,6 +57,24 @@ export interface FormulaConfig {
   deltaDiv: number;
   chillers: ChillerTerm[];
 }
+
+/**
+ * Compressed-air specific-energy card (kWh/m³):
+ *   Σ consumption(numerator) ÷ ( factor × runHours(runGate > runThreshold) × Σ avg(flow) )
+ * Numerator = energy meters (Σ boundary delta). Denominator = air volume:
+ * each flow sensor's window-average × factor (min/hr) × the running hours where
+ * the gate sensor exceeds runThreshold.
+ */
+export interface CdaSecConfig {
+  kind: "cdaSec";
+  numerator: SourceTerm[];
+  flow: SourceTerm[];
+  runGate: SourceTerm;
+  runThreshold: number;
+  factor: number;
+}
+
+export type FormulaConfig = ChillerSumConfig | CdaSecConfig;
 
 const chiller = (
   power: string,
@@ -107,6 +125,28 @@ export const FORMULA_CONFIGS: Record<number, FormulaConfig> = {
       chiller("TPSGHTCSS_N1(D295)", "TPSGMHVAC_A16(D25)", "TPSGMHVAC_A16(D26)", "TPSGMHVAC_A16(D0)"), // Chiller 3
       chiller("TPSGHTCSS_P1(D206)", "TPSGMHVAC_A17(D25)", "TPSGMHVAC_A17(D26)", "TPSGMHVAC_A17(D0)"), // Chiller 4
     ],
+  },
+
+  // 84 — CA_CELL_01 (kWh/m³): compressed-air specific energy.
+  //   Σ consumption(meters) ÷ ( 60 × runHours(TPSGCCDA_C3 D1 > 1) × (avg D1 + avg D3) )
+  84: {
+    kind: "cdaSec",
+    numerator: terms(["TPSGHTCSS_Y1(D160)", "TPSGHTCSS_Y1(D1)", "TPSGHTCSS_X1(D126)"]),
+    flow: terms(["TPSGCCDA_C3(D1)", "TPSGCCDA_C3(D3)"]),
+    runGate: term("TPSGCCDA_C3(D1)"),
+    runThreshold: 1,
+    factor: 60,
+  },
+
+  // 85 — CA_MOD_01 (kWh/m³): compressed-air specific energy (module).
+  //   Σ consumption(meters) ÷ ( 60 × runHours(TPSGMCDA_C3 D1 > 1) × avg D1 )
+  85: {
+    kind: "cdaSec",
+    numerator: terms(["TPSGHTCSS_N1(D62)", "TPSGHTCSS_P1(D146)", "TPSGHTCSS_N1(D355)"]),
+    flow: terms(["TPSGMCDA_C3(D1)"]),
+    runGate: term("TPSGMCDA_C3(D1)"),
+    runThreshold: 1,
+    factor: 60,
   },
 };
 

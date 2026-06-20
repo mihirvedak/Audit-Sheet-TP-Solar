@@ -209,6 +209,23 @@ function runningHours(
   }
   return ms / 3_600_000;
 }
+// Time-weighted hours where value > threshold within [start, end). Each sample
+// holds its value until the next (the last extends to `end`).
+function runHoursAbove(
+  s: Sample[],
+  start: number,
+  end: number,
+  threshold: number,
+): number {
+  let ms = 0;
+  for (let i = 0; i < s.length; i++) {
+    const next = i + 1 < s.length ? s[i + 1].t : end;
+    const a = Math.max(s[i].t, start);
+    const b = Math.min(next, end);
+    if (b > a && s[i].v > threshold) ms += b - a;
+  }
+  return ms / 3_600_000;
+}
 
 export interface WindowCtx {
   startMs: number;
@@ -306,8 +323,15 @@ export function pairsForCard(card: CardItem): { devID: string; sensor: string }[
     return card.liveConfig.sensors.map((s) => ({ devID: s.device, sensor: s.sensor }));
   }
   if (card.formula) {
+    const f = card.formula;
     const out: { devID: string; sensor: string }[] = [];
-    for (const ch of card.formula.chillers) {
+    if (f.kind === "cdaSec") {
+      for (const t of f.numerator) out.push({ devID: t.device, sensor: t.sensor });
+      for (const t of f.flow) out.push({ devID: t.device, sensor: t.sensor });
+      out.push({ devID: f.runGate.device, sensor: f.runGate.sensor });
+      return out;
+    }
+    for (const ch of f.chillers) {
       out.push({ devID: ch.power.device, sensor: ch.power.sensor });
       out.push({ devID: ch.supply.device, sensor: ch.supply.sensor });
       out.push({ devID: ch.ret.device, sensor: ch.ret.sensor });
@@ -316,6 +340,29 @@ export function pairsForCard(card: CardItem): { devID: string; sensor: string }[
     return out;
   }
   return [];
+}
+
+/** CDA specific-energy: Σ consumption ÷ (factor × runHours(gate>thr) × Σ avg(flow)). */
+function cdaSecValue(
+  f: Extract<NonNullable<CardItem["formula"]>, { kind: "cdaSec" }>,
+  map: Map<string, SensorPoint>,
+  ctx?: WindowCtx,
+): { num: number; den: number; hrs: number; anyNum: boolean } {
+  let num = 0;
+  let anyNum = false;
+  for (const t of f.numerator) {
+    const pp = map.get(key(t.device, t.sensor));
+    if (pp) anyNum = true;
+    num += ctx ? boundaryDelta(pp, ctx.startMs, ctx.endMs) : cumulativeDelta(pp);
+  }
+  const gate = samples(map.get(key(f.runGate.device, f.runGate.sensor)));
+  const hrs = ctx ? runHoursAbove(gate, ctx.startMs, ctx.endMs, f.runThreshold) : 0;
+  let flowSum = 0;
+  for (const t of f.flow) {
+    const a = mean(samples(map.get(key(t.device, t.sensor))).map((x) => x.v));
+    flowSum += a ?? 0;
+  }
+  return { num, den: f.factor * hrs * flowSum, hrs, anyNum };
 }
 
 /** Compute a formula (chiller-sum) card: Σ (consumption ÷ TR) over the chillers,
@@ -327,6 +374,11 @@ export function computeFormulaValue(
 ): string {
   const f = card.formula;
   if (!f) return "NA";
+  if (f.kind === "cdaSec") {
+    const { num, den, anyNum } = cdaSecValue(f, map, ctx);
+    if (!anyNum || den <= 0) return "NA";
+    return (num / den).toFixed(3);
+  }
   let total = 0;
   let any = false;
   for (const ch of f.chillers) {
@@ -454,7 +506,31 @@ export function breakdownForCard(
       detail(s.device, s.sensor, "numerator", map, lastMap),
     );
   }
-  if (card.formula) {
+  if (card.formula?.kind === "cdaSec") {
+    // CDA SEC: numerator meter rows (consumption) + flow rows (avg, hrs, m³).
+    const f = card.formula;
+    const rows: SensorBreakdown[] = f.numerator.map((t) =>
+      detail(t.device, t.sensor, "numerator", map, lastMap, ctx),
+    );
+    const gate = samples(map.get(key(f.runGate.device, f.runGate.sensor)));
+    const hrs = ctx ? runHoursAbove(gate, ctx.startMs, ctx.endMs, f.runThreshold) : 0;
+    for (const t of f.flow) {
+      const avg = mean(samples(map.get(key(t.device, t.sensor))).map((x) => x.v));
+      rows.push({
+        device: t.device,
+        sensor: t.sensor,
+        role: "denominator",
+        firstTs: null,
+        firstVal: avg, // avg flow over window
+        lastTs: null,
+        lastVal: hrs, // running hours (gate > threshold)
+        consumption: avg != null ? avg * f.factor * hrs : 0, // m³ contribution
+        hasData: avg != null,
+      });
+    }
+    return rows;
+  }
+  if (card.formula?.kind === "chillerSum") {
     // Formula cards: one row per chiller — consumption, TR, and the contribution.
     const f = card.formula;
     return f.chillers.map((ch, i) => {

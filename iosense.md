@@ -98,3 +98,23 @@ divisor 3.024 fixed. Status flag = **D0** (1 = Running).
 2. Confirm `getAutoSampled(deviceId, sensorId, startTime, endTime, …)` signature.
 3. Implement `src/services/iosense.ts` (login → token → getAutoSampled) and a
    server route to compute `Σ numerator / divisor` per card config.
+
+### Row 84 — CA_CELL_01 (kWh/m³): compressed-air specific energy
+`Σ consumption(meters) ÷ ( 60 × runHours(TPSGCCDA_C3 D1 > 1) × (avg D1 + avg D3) )`.
+Numerator = boundary-anchored consumption of the energy meters; denominator =
+air volume (avg flow × 60 min/hr × hours the flow gate D1 exceeds 1).
+
+| Part | Sensors |
+|------|---------|
+| Numerator (Σ consumption) | TPSGHTCSS_Y1(D160), TPSGHTCSS_Y1(D1), TPSGHTCSS_X1(D126) |
+| Flow (avg × 60 × hrs) | TPSGCCDA_C3(D1), TPSGCCDA_C3(D3) |
+| Running-hours gate | TPSGCCDA_C3(D1) > 1 |
+
+### Row 85 — CA_MOD_01 (kWh/m³): compressed-air specific energy (module)
+`Σ consumption(meters) ÷ ( 60 × runHours(TPSGMCDA_C3 D1 > 1) × avg D1 )`.
+
+| Part | Sensors |
+|------|---------|
+| Numerator (Σ consumption) | TPSGHTCSS_N1(D62), TPSGHTCSS_P1(D146), TPSGHTCSS_N1(D355) |
+| Flow (avg × 60 × hrs) | TPSGMCDA_C3(D1) |
+| Running-hours gate | TPSGMCDA_C3(D1) > 1 |

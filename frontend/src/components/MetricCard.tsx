@@ -51,7 +51,12 @@ const fmtTs = (s: string | null): string =>
 // Human-readable "how this value was calculated" line from the sensor rows.
 function calcSummary(card: CardItem, rows: SensorBreakdown[], value: string): string {
   const u = card.unit ? ` ${card.unit}` : "";
-  if (card.formula) {
+  if (card.formula?.kind === "cdaSec") {
+    const num = rows.filter((r) => r.role === "numerator").reduce((a, r) => a + r.consumption, 0);
+    const den = rows.filter((r) => r.role === "denominator").reduce((a, r) => a + r.consumption, 0);
+    return `Σ consumption (${fmtNum(num)} kWh) ÷ air volume (${fmtNum(den)} m³) = ${value}${u}`;
+  }
+  if (card.formula?.kind === "chillerSum") {
     return `Σ of ${rows.length} chillers — consumption ÷ TR, where TR = ${card.formula.powerDiv} × ΔT ÷ ${card.formula.deltaDiv} (running-hours weighted) = ${value}${u}`;
   }
   const live = card.liveConfig;
@@ -148,7 +153,62 @@ function InfoButton({
               </span>
               {calcSummary(card, rows, value)}
             </div>
-            {card.formula ? (
+            {card.formula?.kind === "cdaSec" ? (
+              // CDA SEC: meter consumption (kWh) + flow AVERAGE over the window.
+              <div className="space-y-3">
+                <div>
+                  <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-400">
+                    Consumption (kWh) — energy meters
+                  </div>
+                  <table className="w-full border-collapse">
+                    <tbody>
+                      {rows
+                        .filter((r) => r.role === "numerator")
+                        .map((r, idx) => (
+                          <tr key={`n${idx}`} className="border-t border-zinc-100 dark:border-zinc-800">
+                            <td className="py-1 pr-2 font-mono text-[11px] text-zinc-700 dark:text-zinc-300">
+                              {r.device}
+                              <span className="text-zinc-400">·{r.sensor}</span>
+                              {!r.hasData && <span className="ml-1 text-[10px] text-rose-500">no data</span>}
+                            </td>
+                            <td className="py-1 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
+                              {fmtNum(r.consumption)}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div>
+                  <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-400">
+                    Flow — average over duration
+                  </div>
+                  <table className="w-full border-collapse">
+                    <tbody>
+                      {rows
+                        .filter((r) => r.role === "denominator")
+                        .map((r, idx) => (
+                          <tr key={`f${idx}`} className="border-t border-zinc-100 dark:border-zinc-800">
+                            <td className="py-1 pr-2 font-mono text-[11px] text-zinc-700 dark:text-zinc-300">
+                              {r.device}
+                              <span className="text-zinc-400">·{r.sensor}</span>
+                            </td>
+                            <td className="py-1 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
+                              {fmtNum(r.firstVal)} <span className="text-[10px] text-zinc-400">avg</span>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                  <div className="mt-1 text-[10px] text-zinc-400">
+                    Running hours (gate &gt; 1):{" "}
+                    <span className="tabular-nums text-zinc-600 dark:text-zinc-300">
+                      {fmtNum(rows.find((r) => r.role === "denominator")?.lastVal ?? null)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : card.formula?.kind === "chillerSum" ? (
               // Formula (chiller) cards: per-chiller avg power, ΔT, contribution.
               <table className="w-full border-collapse">
                 <thead>
