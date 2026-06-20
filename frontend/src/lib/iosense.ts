@@ -317,6 +317,8 @@ export function pairsForCard(card: CardItem): { devID: string; sensor: string }[
     if (cfg.divisor) pairs.push({ devID: cfg.divisor.device, sensor: cfg.divisor.sensor });
     if (cfg.denominator)
       for (const t of cfg.denominator) pairs.push({ devID: t.device, sensor: t.sensor });
+    if (cfg.subtract)
+      for (const t of cfg.subtract) pairs.push({ devID: t.device, sensor: t.sensor });
     return pairs;
   }
   if (card.liveConfig) {
@@ -418,7 +420,7 @@ export function computeLiveValue(
 export interface SensorBreakdown {
   device: string;
   sensor: string;
-  role: "numerator" | "divisor" | "denominator";
+  role: "numerator" | "divisor" | "denominator" | "subtract";
   firstTs: string | null;
   firstVal: number | null;
   lastTs: string | null;
@@ -430,7 +432,7 @@ export interface SensorBreakdown {
 function detail(
   device: string,
   sensor: string,
-  role: "numerator" | "divisor" | "denominator",
+  role: "numerator" | "divisor" | "denominator" | "subtract",
   map: Map<string, SensorPoint>,
   lastMap?: LastDPMap,
   ctx?: WindowCtx,
@@ -493,6 +495,9 @@ export function breakdownForCard(
     const rows = cfg.numerator.map((t) =>
       detail(t.device, t.sensor, "numerator", map, lastMap, ctx),
     );
+    if (cfg.subtract)
+      for (const t of cfg.subtract)
+        rows.push(detail(t.device, t.sensor, "subtract", map, lastMap, ctx));
     if (cfg.divisor)
       rows.push(detail(cfg.divisor.device, cfg.divisor.sensor, "divisor", map, lastMap, ctx));
     if (cfg.denominator)
@@ -594,15 +599,20 @@ export function computeCardValue(
   const { total: num, any } = sumDelta(cfg.numerator, map, ctx);
   if (!any) return "NA";
 
+  // Net consumption: subtract any "subtract" meter deltas from the numerator.
+  const sub =
+    cfg.subtract && cfg.subtract.length ? sumDelta(cfg.subtract, map, ctx).total : 0;
+  const net = num - sub;
+
   if (cfg.divisor) {
     const prod = sumValues(map.get(key(cfg.divisor.device, cfg.divisor.sensor)));
     if (prod <= 0) return "NA";
-    return (num / prod).toFixed(2);
+    return (net / prod).toFixed(2);
   }
   if (cfg.denominator && cfg.denominator.length > 0) {
     const { total: den } = sumDelta(cfg.denominator, map, ctx);
     if (den <= 0) return "NA";
-    return (num / den).toFixed(2);
+    return (net / den).toFixed(2);
   }
-  return num.toFixed(2);
+  return net.toFixed(2);
 }

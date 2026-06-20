@@ -72,12 +72,15 @@ function calcSummary(card: CardItem, rows: SensorBreakdown[], value: string): st
   const sum = (role: SensorBreakdown["role"]) =>
     rows.filter((r) => r.role === role).reduce((a, r) => a + r.consumption, 0);
   const num = sum("numerator");
+  const subtract = sum("subtract");
   const div = rows.find((r) => r.role === "divisor");
   const denomRows = rows.filter((r) => r.role === "denominator");
   if (div)
     return `Σ consumption (${fmtNum(num)}) ÷ production (${fmtNum(div.consumption)}) = ${value}${u}`;
   if (denomRows.length)
     return `numerator (${fmtNum(num)}) ÷ denominator (${fmtNum(sum("denominator"))}) = ${value}${u}`;
+  if (subtract)
+    return `consumption (${fmtNum(num)}) − (${fmtNum(subtract)}) = ${value}${u}`;
   return `Σ consumption (${fmtNum(num)}) = ${value}${u}`;
 }
 
@@ -304,6 +307,11 @@ function InfoButton({
                         {r.role === "divisor" && (
                           <span className="ml-1 rounded bg-zinc-100 px-1 text-[9px] uppercase text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
                             prod
+                          </span>
+                        )}
+                        {r.role === "subtract" && (
+                          <span className="ml-1 rounded bg-rose-100 px-1 text-[9px] uppercase text-rose-600 dark:bg-rose-500/15 dark:text-rose-300">
+                            − minus
                           </span>
                         )}
                         {!r.hasData && (

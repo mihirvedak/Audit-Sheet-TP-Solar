@@ -26,6 +26,8 @@ export interface CardConfig {
   divisor?: SourceTerm;
   /** Ratio denominator → summed consumption deltas (recovery-type cards). */
   denominator?: SourceTerm[];
+  /** Consumption deltas SUBTRACTED from the numerator (net = Σnum − Σsubtract). */
+  subtract?: SourceTerm[];
 }
 
 function term(token: string): SourceTerm {
@@ -541,39 +543,31 @@ export const CARD_CONFIGS: Record<number, CardConfig> = {
   120: { metric: "consumption", method: "getAutoSampled",
     numerator: terms(["TPMWTPFM_A1(D1)"]) },
 
-  // 121 — WC_MOD_RES (kL)
+  // 121 — WC_MOD_RES (m³): consumption of a single meter
   121: { metric: "consumption", method: "getAutoSampled",
-    numerator: terms(["TPMSTPFM_A1(D5)", "TPMWTPFM_A1(D3)", "TPMWTPFM_A1(D5)"]) },
+    numerator: terms(["TPMSTPFM_A1(D5)"]) },
 
-  /* ---- Ratio cards: value = Σ numerator / Σ denominator (both deltas) ---- */
-
-  // 122 — UPW_REC
+  // 122 — UPW_REC (kL): net consumption = D13 − D27
   122: { metric: "consumption", method: "getAutoSampled",
-    numerator: terms(["TPSUPWFM_A1(D61)", "TPSUPWFM_A1(D63)", "TPSUPWFM_A1(D65)"]),
-    denominator: terms([
-      "TPSUPWFM_A1(D37)", "TPSUPWFM_A1(D39)", "TPSUPWFM_A1(D41)",
-      "TPSUPWFM_A1(D43)", "TPSUPWFM_A1(D45)", "TPSUPWFM_A1(D47)",
-    ]) },
+    numerator: terms(["TPSUPWFM_A1(D13)"]),
+    subtract: terms(["TPSUPWFM_A1(D27)"]) },
 
   // 123 — recovery-001
   123: { metric: "consumption", method: "getAutoSampled",
     numerator: terms(["TPSGCZLD_A14(D63)", "TPSGCZLD_A9(D57)", "TPSGCZLD_A9(D93)"]),
     denominator: terms(["TPSGCZLD_A9(D59)", "TPSGCZLD_A9(D95)", "TPSGCZLD_A5(D55)"]) },
 
-  // 124 — thermal-001
+  // 124 — thermal-001 (kL): consumption
   124: { metric: "consumption", method: "getAutoSampled",
-    numerator: terms(["TPSGCZLD_A14(D63)"]),
-    denominator: terms(["TPSGCZLD_A9(D59)", "TPSGCZLD_A9(D95)"]) },
+    numerator: terms(["TPSGCZLD_A14(D63)"]) },
 
-  // 125 — pretreatrecover-001
+  // 125 — pretreatrecover-001 (kL): consumption of D21 + D93
   125: { metric: "consumption", method: "getAutoSampled",
-    numerator: terms(["TPSGCZLD_A9(D57)", "TPSGCZLD_A9(D93)"]),
-    denominator: terms(["TPSGCZLD_A5(D55)"]) },
+    numerator: terms(["TPSGCZLD_A9(D21)", "TPSGCZLD_A9(D93)"]) },
 
-  // 126 — ETP_BD (recovery ratio)
+  // 126 — ETP_BD (kL): consumption
   126: { metric: "consumption", method: "getAutoSampled",
-    numerator: terms(["TPSETPFM_A1(D3)"]),
-    denominator: terms(["TPSETPFM_A1(D1)"]) },
+    numerator: terms(["TPSETPFM_A1(D9)"]) },
 
   // 127 — BB_REC
   127: { metric: "consumption", method: "getAutoSampled",
