@@ -20,6 +20,14 @@ export interface CardConfig {
   metric: MetricType;
   /** IOsense fetch method to use for this card's series. */
   method: "getAutoSampled";
+  /**
+   * How the numerator terms are aggregated. Default "sum" (Σ consumption deltas).
+   *  - "average" → Σ consumption deltas ÷ count (mean per-meter consumption).
+   *  - "latest"  → most recent reading in the window (last data point, NOT a
+   *    delta); for a single-sensor card this is just that sensor's latest value.
+   * Only meaningful for plain-total cards (no divisor/denominator).
+   */
+  op?: "sum" | "average" | "latest";
   /** Sensors summed for the numerator (cumulative consumption = last−first). */
   numerator: SourceTerm[];
   /** Single production normaliser → SUMMED (SEC = energy / production). */
@@ -512,9 +520,9 @@ export const CARD_CONFIGS: Record<number, CardConfig> = {
   52: { metric: "consumption", method: "getAutoSampled",
     numerator: terms(["TPSETPFM_A1(D1)"]) },
 
-  // 53 — ETP_BD (kL)
-  53: { metric: "consumption", method: "getAutoSampled",
-    numerator: terms(["TPSETPFM_A1(D29)"]) },
+  // 53 — ETP_BD (kL): last data point of TPSETPFM_A1(D3) over the window
+  53: { metric: "consumption", method: "getAutoSampled", op: "latest",
+    numerator: terms(["TPSETPFM_A1(D3)"]) },
 
   // 56 — BB_IN (kL)
   56: { metric: "consumption", method: "getAutoSampled",
@@ -532,11 +540,11 @@ export const CARD_CONFIGS: Record<number, CardConfig> = {
   118: { metric: "consumption", method: "getAutoSampled",
     numerator: terms(["TPSUPWFM_A1(D1)"]) },
 
-  // 119 — WC_CELL_RES (kL)
-  119: { metric: "consumption", method: "getAutoSampled",
+  // 119 — WC_CELL_RES (kL): AVERAGE of the per-meter consumption deltas
+  119: { metric: "consumption", method: "getAutoSampled", op: "average",
     numerator: terms([
-      "TPCSTPFM_A1(D5)", "TPSGCZLD_A9(D56)", "TPSGCZLD_A9(D92)",
-      "TPSGCZLD_A6(D43)", "TPSETPFM_A1(D3)", "TPSETPFM_A1(D9)",
+      "TPCSTPFM_A1(D5)", "TPSGCZLD_A9(D57)", "TPSGCZLD_A9(D93)",
+      "TPSETPFM_A1(D3)", "TPSETPFM_A1(D9)",
     ]) },
 
   // 120 — WC_MOD_SIPCOT (kL)

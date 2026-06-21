@@ -596,8 +596,27 @@ export function computeCardValue(
   const cfg = card.config;
   if (!cfg) return "NA";
 
+  const round2 = (n: number) => (Math.round(n * 100) / 100).toString();
+
+  // "latest" → most recent reading in the window (last data point), averaged
+  // across the numerator sensors (a single-sensor card → just its latest value).
+  if (cfg.op === "latest") {
+    const vals = cfg.numerator
+      .map((t) => latestValue(map.get(key(t.device, t.sensor))))
+      .filter((v): v is number => v != null);
+    if (vals.length === 0) return "NA";
+    return round2(vals.reduce((a, b) => a + b, 0) / vals.length);
+  }
+
   const { total: num, any } = sumDelta(cfg.numerator, map, ctx);
   if (!any) return "NA";
+
+  // "average" → mean of the per-meter consumption deltas (no divisor/denominator).
+  if (cfg.op === "average" && !cfg.divisor && !cfg.denominator) {
+    const sub =
+      cfg.subtract && cfg.subtract.length ? sumDelta(cfg.subtract, map, ctx).total : 0;
+    return round2((num - sub) / cfg.numerator.length);
+  }
 
   // Net consumption: subtract any "subtract" meter deltas from the numerator.
   const sub =
