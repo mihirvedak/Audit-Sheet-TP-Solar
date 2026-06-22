@@ -520,8 +520,8 @@ export const CARD_CONFIGS: Record<number, CardConfig> = {
   52: { metric: "consumption", method: "getAutoSampled",
     numerator: terms(["TPSETPFM_A1(D1)"]) },
 
-  // 53 — ETP_BD (kL): last data point of TPSETPFM_A1(D3) over the window
-  53: { metric: "consumption", method: "getAutoSampled", op: "latest",
+  // 53 — ETP_BD (kL): SUM of consumption deltas
+  53: { metric: "consumption", method: "getAutoSampled", op: "sum",
     numerator: terms(["TPSETPFM_A1(D3)"]) },
 
   // 56 — BB_IN (kL)
