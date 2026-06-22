@@ -540,8 +540,8 @@ export const CARD_CONFIGS: Record<number, CardConfig> = {
   118: { metric: "consumption", method: "getAutoSampled",
     numerator: terms(["TPSUPWFM_A1(D1)"]) },
 
-  // 119 — WC_CELL_RES (kL): AVERAGE of the per-meter consumption deltas
-  119: { metric: "consumption", method: "getAutoSampled", op: "average",
+  // 119 — WC_CELL_RES (kL): SUM of the per-meter consumption deltas
+  119: { metric: "consumption", method: "getAutoSampled", op: "sum",
     numerator: terms([
       "TPCSTPFM_A1(D5)", "TPSGCZLD_A9(D57)", "TPSGCZLD_A9(D93)",
       "TPSETPFM_A1(D3)", "TPSETPFM_A1(D9)",
