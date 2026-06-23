@@ -290,7 +290,7 @@ Object.assign(UNIT_BY_ROW, {
   74: "%", 75: "%", 76: "%", 77: "%", 78: "%", 79: "%", 80: "%", 81: "%",
   82: "kW/TR", 83: "kW/TR", 84: "kWh/m3", 85: "kWh/m3",
   110: "ML", 111: "%", 112: "ML", 113: "%", 114: "kL", 115: "%", 116: "kL",
-  117: "%", 118: "kL", 119: "kL", 120: "kL", 121: "m³", 122: "kL", 123: "kL",
+  117: "%", 118: "kL", 119: "kL", 120: "kL", 121: "kL", 122: "kL", 123: "kL",
   124: "kL", 125: "kL", 126: "kL", 127: "kL", 128: "kL", 129: "kL", 130: "%",
   131: "%", 132: "kL", 133: "kL", 134: "kL",
 });
@@ -315,6 +315,7 @@ function classify(label: string): { kind: CardKind; unit?: string } {
   if (l.startsWith("pres-")) return { kind: "value", unit: "bar" };
   if (l.startsWith("tank-")) return { kind: "value", unit: "%" };
   if (l.startsWith("res_")) return { kind: "value", unit: "m³/h" };
+  if (l === "wc_mod_res") return { kind: "value", unit: "kL" };
   if (l.endsWith("_ph")) return { kind: "value", unit: "pH" };
   if (l.endsWith("_tds")) return { kind: "value", unit: "ppm" };
   if (l.endsWith("_ntu")) return { kind: "value", unit: "NTU" };

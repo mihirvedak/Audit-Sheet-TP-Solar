@@ -551,7 +551,7 @@ export const CARD_CONFIGS: Record<number, CardConfig> = {
   120: { metric: "consumption", method: "getAutoSampled",
     numerator: terms(["TPMWTPFM_A1(D1)"]) },
 
-  // 121 — WC_MOD_RES (m³): consumption of a single meter
+  // 121 — WC_MOD_RES (kL): consumption of a single meter
   121: { metric: "consumption", method: "getAutoSampled",
     numerator: terms(["TPMSTPFM_A1(D5)"]) },
 
