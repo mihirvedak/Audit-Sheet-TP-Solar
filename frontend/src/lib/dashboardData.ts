@@ -184,6 +184,25 @@ const RAW: string[] = [
   "TANK-PLCDTM-B-002",
   "TANK-TXCDTM-A-001",
   "TANK-TXCDTM-B-002",
+  // Bulk-upload module audit cards (rows 147+): Σ device consumption on D0, kL.
+  "HVAC HT",
+  "PEX",
+  "Canteen",
+  "Fire pump house",
+  "STP",
+  "WTP",
+  "EVA POE-1",
+  "EVA POE-2",
+  "UPS 1& 2",
+  "CDA LT",
+  "PCW",
+  "Reliability lab",
+  "RM WH",
+  "FG WH",
+  "Guest House",
+  "IT Server",
+  "Prod Phase 1",
+  "Prod Phase 2",
 ];
 
 /* ------------------------------------------------------------------ */
@@ -290,9 +309,13 @@ Object.assign(UNIT_BY_ROW, {
   74: "%", 75: "%", 76: "%", 77: "%", 78: "%", 79: "%", 80: "%", 81: "%",
   82: "kW/TR", 83: "kW/TR", 84: "kWh/m3", 85: "kWh/m3",
   110: "ML", 111: "%", 112: "ML", 113: "%", 114: "kL", 115: "%", 116: "kL",
-  117: "%", 118: "kL", 119: "kL", 120: "kL", 121: "kL", 122: "kL", 123: "kL",
+  117: "%", 118: "kL", 119: "kL", 120: "kL", 121: "m³", 122: "kL", 123: "kL",
   124: "kL", 125: "kL", 126: "kL", 127: "kL", 128: "kL", 129: "kL", 130: "%",
   131: "%", 132: "kL", 133: "kL", 134: "kL",
+  // 147–164: bulk-upload module audit cards → kL
+  147: "kL", 148: "kL", 149: "kL", 150: "kL", 151: "kL", 152: "kL", 153: "kL",
+  154: "kL", 155: "kL", 156: "kL", 157: "kL", 158: "kL", 159: "kL", 160: "kL",
+  161: "kL", 162: "kL", 163: "kL", 164: "kL",
 });
 
 /* ------------------------------------------------------------------ */

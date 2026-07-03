@@ -44,6 +44,9 @@ function term(token: string): SourceTerm {
   return { device: m[1].trim(), sensor: m[2] };
 }
 const terms = (tokens: string[]): SourceTerm[] => tokens.map(term);
+// Devices whose common sensor is D0 → build "DEVICE(D0)" terms.
+const d0Terms = (devices: string[]): SourceTerm[] =>
+  devices.map((d) => term(`${d}(D0)`));
 
 /* ------------------------------------------------------------------ */
 /* Formula cards — custom arithmetic that the numerator/divisor model   */
@@ -593,4 +596,87 @@ export const CARD_CONFIGS: Record<number, CardConfig> = {
   // 132 — WTP_TREATED (kL)
   132: { metric: "consumption", method: "getAutoSampled",
     numerator: terms(["TPMWTPFM_A1(D3)", "TPMWTPFM_A1(D5)"]) },
+
+  /* ---- Bulk-upload module audit cards (rows 147+): Σ device consumption on
+     the common D0 sensor, kL. Prod Phase 1/2 use explicit TPSGHTCSS_C1 sensors. */
+
+  // 147 — HVAC HT
+  147: { metric: "consumption", method: "getAutoSampled",
+    numerator: d0Terms(["MODULE_HVAC_HT_A1"]) },
+
+  // 148 — PEX
+  148: { metric: "consumption", method: "getAutoSampled",
+    numerator: d0Terms(["7F4_PCC_3_A1", "2F1_PCC_5_A1"]) },
+
+  // 149 — Canteen
+  149: { metric: "consumption", method: "getAutoSampled",
+    numerator: d0Terms(["5F4_INFRA_PCC_1_A1", "3F3_INFRA_PCC_2_A1"]) },
+
+  // 150 — Fire pump house
+  150: { metric: "consumption", method: "getAutoSampled",
+    numerator: d0Terms(["3F4_INFRA_PCC_2_A1", "5F3_PCC_2_A1"]) },
+
+  // 151 — STP
+  151: { metric: "consumption", method: "getAutoSampled",
+    numerator: d0Terms([
+      "4F2_PCC1_INFRA_MDS1_A1", "3F3_PCC1_INFRA_MDS1_A1", "3F2_PCC2_INFRA_MDS1_A1",
+    ]) },
+
+  // 152 — WTP
+  152: { metric: "consumption", method: "getAutoSampled",
+    numerator: d0Terms(["4F3_PCC1_INFRA_MDS1_A1", "5F4_PCC2_INFRA_MDS1_A1"]) },
+
+  // 153 — EVA POE-1
+  153: { metric: "consumption", method: "getAutoSampled",
+    numerator: d0Terms([
+      "APFC_1_A1", "RM_HVAC_load_A1", "Craftsman_PDP_1_A1", "Aux_Power_A1",
+      "Craftsman_PDP_2_A1", "Weight_bridge_PDP_supply_A1", "RM_PDB_panel_Office_area_A1",
+    ]) },
+
+  // 154 — EVA POE-2
+  154: { metric: "consumption", method: "getAutoSampled",
+    numerator: d0Terms([
+      "Craftsman_PDP_6_A1", "FG_PDB_panel_Office_area_A1", "Craftsman_PDP_7_A1",
+      "FG_store_PDP_5_A1", "EVA_POE_panel_A1", "APFC_2_A1",
+    ]) },
+
+  // 155 — UPS 1& 2
+  155: { metric: "consumption", method: "getAutoSampled",
+    numerator: d0Terms(["6F1_PCC_1_A1", "3F1_PCC_2_A1", "7F3_PCC_2_A1", "2F1_PCC_2_A1"]) },
+
+  // 156 — CDA LT
+  156: { metric: "consumption", method: "getAutoSampled",
+    numerator: d0Terms(["8F1_PCC_3_SS1_A1", "9F1_PCC_3_SS1_A1", "9F2_PCC_3_SS1_A1"]) },
+
+  // 157 — PCW
+  157: { metric: "consumption", method: "getAutoSampled",
+    numerator: d0Terms(["1F1_Substation_2_A1"]) },
+
+  // 158 — Reliability lab (device IDs spelled "Substaton" per source)
+  158: { metric: "consumption", method: "getAutoSampled",
+    numerator: d0Terms(["7F1_Substaton_2_A1", "5F3_Substaton_2_A1"]) },
+
+  // 159 — RM WH
+  159: { metric: "consumption", method: "getAutoSampled",
+    numerator: d0Terms(["1F1_EVA_POE_SS_A1"]) },
+
+  // 160 — FG WH
+  160: { metric: "consumption", method: "getAutoSampled",
+    numerator: d0Terms(["2F1_EVA_POE_SS_A1"]) },
+
+  // 161 — Guest House
+  161: { metric: "consumption", method: "getAutoSampled",
+    numerator: d0Terms(["4F4_MDS_1_A1", "4F5_MDS_1_A1"]) },
+
+  // 162 — IT Server
+  162: { metric: "consumption", method: "getAutoSampled",
+    numerator: d0Terms(["6F3_PCC_5_A1"]) },
+
+  // 163 — Prod Phase 1
+  163: { metric: "consumption", method: "getAutoSampled",
+    numerator: terms(["TPSGHTCSS_C1(D70)", "TPSGHTCSS_C1(D138)"]) },
+
+  // 164 — Prod Phase 2
+  164: { metric: "consumption", method: "getAutoSampled",
+    numerator: terms(["TPSGHTCSS_C1(D405)", "TPSGHTCSS_C1(D473)"]) },
 };
