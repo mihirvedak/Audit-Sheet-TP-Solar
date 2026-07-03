@@ -597,86 +597,92 @@ export const CARD_CONFIGS: Record<number, CardConfig> = {
   132: { metric: "consumption", method: "getAutoSampled",
     numerator: terms(["TPMWTPFM_A1(D3)", "TPMWTPFM_A1(D5)"]) },
 
-  /* ---- Bulk-upload module audit cards (rows 147+): Σ device consumption on
-     the common D0 sensor, kL. Prod Phase 1/2 use explicit TPSGHTCSS_C1 sensors. */
+  /* ---- Bulk-upload module audit cards (rows 147+): value = Σ device
+     consumption ÷ SUM(MODULE_PRODUCTION_A1·D0 over the window). Numerator meters
+     use the common D0 sensor (Prod Phase / CDA HT use explicit TPSGHTCSS sensors). */
 
   // 147 — HVAC HT
   147: { metric: "consumption", method: "getAutoSampled",
-    numerator: d0Terms(["MODULE_HVAC_HT_A1"]) },
+    numerator: d0Terms(["MODULE_HVAC_HT_A1"]), divisor: term(MODULE) },
 
-  // 148 — PEX
+  // 148 — CDA HT
   148: { metric: "consumption", method: "getAutoSampled",
-    numerator: d0Terms(["7F4_PCC_3_A1", "2F1_PCC_5_A1"]) },
+    numerator: terms(["TPSGHTCSS_N1(D62)", "TPSGHTCSS_N1(D355)", "TPSGHTCSS_P1(D146)"]),
+    divisor: term(MODULE) },
 
-  // 149 — Canteen
+  // 149 — PEX
   149: { metric: "consumption", method: "getAutoSampled",
-    numerator: d0Terms(["5F4_INFRA_PCC_1_A1", "3F3_INFRA_PCC_2_A1"]) },
+    numerator: d0Terms(["7F4_PCC_3_A1", "2F1_PCC_5_A1"]), divisor: term(MODULE) },
 
-  // 150 — Fire pump house
+  // 150 — Canteen
   150: { metric: "consumption", method: "getAutoSampled",
-    numerator: d0Terms(["3F4_INFRA_PCC_2_A1", "5F3_PCC_2_A1"]) },
+    numerator: d0Terms(["5F4_INFRA_PCC_1_A1", "3F3_INFRA_PCC_2_A1"]), divisor: term(MODULE) },
 
-  // 151 — STP
+  // 151 — Fire pump house
   151: { metric: "consumption", method: "getAutoSampled",
+    numerator: d0Terms(["3F4_INFRA_PCC_2_A1", "5F3_PCC_2_A1"]), divisor: term(MODULE) },
+
+  // 152 — STP
+  152: { metric: "consumption", method: "getAutoSampled",
     numerator: d0Terms([
       "4F2_PCC1_INFRA_MDS1_A1", "3F3_PCC1_INFRA_MDS1_A1", "3F2_PCC2_INFRA_MDS1_A1",
-    ]) },
+    ]), divisor: term(MODULE) },
 
-  // 152 — WTP
-  152: { metric: "consumption", method: "getAutoSampled",
-    numerator: d0Terms(["4F3_PCC1_INFRA_MDS1_A1", "5F4_PCC2_INFRA_MDS1_A1"]) },
-
-  // 153 — EVA POE-1
+  // 153 — WTP
   153: { metric: "consumption", method: "getAutoSampled",
+    numerator: d0Terms(["4F3_PCC1_INFRA_MDS1_A1", "5F4_PCC2_INFRA_MDS1_A1"]), divisor: term(MODULE) },
+
+  // 154 — EVA POE-1
+  154: { metric: "consumption", method: "getAutoSampled",
     numerator: d0Terms([
       "APFC_1_A1", "RM_HVAC_load_A1", "Craftsman_PDP_1_A1", "Aux_Power_A1",
       "Craftsman_PDP_2_A1", "Weight_bridge_PDP_supply_A1", "RM_PDB_panel_Office_area_A1",
-    ]) },
+    ]), divisor: term(MODULE) },
 
-  // 154 — EVA POE-2
-  154: { metric: "consumption", method: "getAutoSampled",
+  // 155 — EVA POE-2
+  155: { metric: "consumption", method: "getAutoSampled",
     numerator: d0Terms([
       "Craftsman_PDP_6_A1", "FG_PDB_panel_Office_area_A1", "Craftsman_PDP_7_A1",
       "FG_store_PDP_5_A1", "EVA_POE_panel_A1", "APFC_2_A1",
-    ]) },
+    ]), divisor: term(MODULE) },
 
-  // 155 — UPS 1& 2
-  155: { metric: "consumption", method: "getAutoSampled",
-    numerator: d0Terms(["6F1_PCC_1_A1", "3F1_PCC_2_A1", "7F3_PCC_2_A1", "2F1_PCC_2_A1"]) },
-
-  // 156 — CDA LT
+  // 156 — UPS 1& 2
   156: { metric: "consumption", method: "getAutoSampled",
-    numerator: d0Terms(["8F1_PCC_3_SS1_A1", "9F1_PCC_3_SS1_A1", "9F2_PCC_3_SS1_A1"]) },
+    numerator: d0Terms(["6F1_PCC_1_A1", "3F1_PCC_2_A1", "7F3_PCC_2_A1", "2F1_PCC_2_A1"]), divisor: term(MODULE) },
 
-  // 157 — PCW
+  // 157 — CDA LT
   157: { metric: "consumption", method: "getAutoSampled",
-    numerator: d0Terms(["1F1_Substation_2_A1"]) },
+    numerator: d0Terms(["8F1_PCC_3_SS1_A1", "9F1_PCC_3_SS1_A1", "9F2_PCC_3_SS1_A1"]), divisor: term(MODULE) },
 
-  // 158 — Reliability lab (device IDs spelled "Substaton" per source)
+  // 158 — PCW
   158: { metric: "consumption", method: "getAutoSampled",
-    numerator: d0Terms(["7F1_Substaton_2_A1", "5F3_Substaton_2_A1"]) },
+    numerator: d0Terms(["1F1_Substation_2_A1"]), divisor: term(MODULE) },
 
-  // 159 — RM WH
+  // 159 — Reliability lab (device IDs spelled "Substaton" per source)
   159: { metric: "consumption", method: "getAutoSampled",
-    numerator: d0Terms(["1F1_EVA_POE_SS_A1"]) },
+    numerator: d0Terms(["7F1_Substaton_2_A1", "5F3_Substaton_2_A1"]), divisor: term(MODULE) },
 
-  // 160 — FG WH
+  // 160 — RM WH
   160: { metric: "consumption", method: "getAutoSampled",
-    numerator: d0Terms(["2F1_EVA_POE_SS_A1"]) },
+    numerator: d0Terms(["1F1_EVA_POE_SS_A1"]), divisor: term(MODULE) },
 
-  // 161 — Guest House
+  // 161 — FG WH
   161: { metric: "consumption", method: "getAutoSampled",
-    numerator: d0Terms(["4F4_MDS_1_A1", "4F5_MDS_1_A1"]) },
+    numerator: d0Terms(["2F1_EVA_POE_SS_A1"]), divisor: term(MODULE) },
 
-  // 162 — IT Server
+  // 162 — Guest House
   162: { metric: "consumption", method: "getAutoSampled",
-    numerator: d0Terms(["6F3_PCC_5_A1"]) },
+    numerator: d0Terms(["4F4_MDS_1_A1", "4F5_MDS_1_A1"]), divisor: term(MODULE) },
 
-  // 163 — Prod Phase 1
+  // 163 — IT Server
   163: { metric: "consumption", method: "getAutoSampled",
-    numerator: terms(["TPSGHTCSS_C1(D70)", "TPSGHTCSS_C1(D138)"]) },
+    numerator: d0Terms(["6F3_PCC_5_A1"]), divisor: term(MODULE) },
 
-  // 164 — Prod Phase 2
+  // 164 — Prod Phase 1
   164: { metric: "consumption", method: "getAutoSampled",
-    numerator: terms(["TPSGHTCSS_C1(D405)", "TPSGHTCSS_C1(D473)"]) },
+    numerator: terms(["TPSGHTCSS_C1(D70)", "TPSGHTCSS_C1(D138)"]), divisor: term(MODULE) },
+
+  // 165 — Prod Phase 2
+  165: { metric: "consumption", method: "getAutoSampled",
+    numerator: terms(["TPSGHTCSS_C1(D405)", "TPSGHTCSS_C1(D473)"]), divisor: term(MODULE) },
 };

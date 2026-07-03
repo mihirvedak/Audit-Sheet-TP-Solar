@@ -184,8 +184,10 @@ const RAW: string[] = [
   "TANK-PLCDTM-B-002",
   "TANK-TXCDTM-A-001",
   "TANK-TXCDTM-B-002",
-  // Bulk-upload module audit cards (rows 147+): Σ device consumption on D0, kL.
+  // Bulk-upload module audit cards (rows 147+): Σ device consumption ÷
+  // SUM(MODULE_PRODUCTION_A1·D0), kWh/kWp.
   "HVAC HT",
+  "CDA HT",
   "PEX",
   "Canteen",
   "Fire pump house",
@@ -312,10 +314,11 @@ Object.assign(UNIT_BY_ROW, {
   117: "%", 118: "kL", 119: "kL", 120: "kL", 121: "m³", 122: "kL", 123: "kL",
   124: "kL", 125: "kL", 126: "kL", 127: "kL", 128: "kL", 129: "kL", 130: "%",
   131: "%", 132: "kL", 133: "kL", 134: "kL",
-  // 147–164: bulk-upload module audit cards → kL
-  147: "kL", 148: "kL", 149: "kL", 150: "kL", 151: "kL", 152: "kL", 153: "kL",
-  154: "kL", 155: "kL", 156: "kL", 157: "kL", 158: "kL", 159: "kL", 160: "kL",
-  161: "kL", 162: "kL", 163: "kL", 164: "kL",
+  // 147–165: bulk-upload module audit cards → kWh/kWp (consumption ÷ production)
+  147: "kWh/kWp", 148: "kWh/kWp", 149: "kWh/kWp", 150: "kWh/kWp", 151: "kWh/kWp",
+  152: "kWh/kWp", 153: "kWh/kWp", 154: "kWh/kWp", 155: "kWh/kWp", 156: "kWh/kWp",
+  157: "kWh/kWp", 158: "kWh/kWp", 159: "kWh/kWp", 160: "kWh/kWp", 161: "kWh/kWp",
+  162: "kWh/kWp", 163: "kWh/kWp", 164: "kWh/kWp", 165: "kWh/kWp",
 });
 
 /* ------------------------------------------------------------------ */

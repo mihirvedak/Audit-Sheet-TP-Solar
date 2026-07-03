@@ -284,6 +284,7 @@ function InfoButton({
                 </tbody>
               </table>
             ) : (
+              <>
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="text-left text-[10px] uppercase tracking-wide text-zinc-400">
@@ -294,7 +295,9 @@ function InfoButton({
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r, idx) => (
+                  {/* Consumption meters only. The production divisor is summed
+                      (not a delta), so it's shown separately below. */}
+                  {rows.filter((r) => r.role !== "divisor").map((r, idx) => (
                     <tr
                       key={`${r.device}:${r.sensor}:${idx}`}
                       className="border-t border-zinc-100 align-top dark:border-zinc-800"
@@ -304,11 +307,6 @@ function InfoButton({
                           {r.device}
                           <span className="text-zinc-400">·{r.sensor}</span>
                         </span>
-                        {r.role === "divisor" && (
-                          <span className="ml-1 rounded bg-zinc-100 px-1 text-[9px] uppercase text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                            prod
-                          </span>
-                        )}
                         {r.role === "subtract" && (
                           <span className="ml-1 rounded bg-rose-100 px-1 text-[9px] uppercase text-rose-600 dark:bg-rose-500/15 dark:text-rose-300">
                             − minus
@@ -333,6 +331,25 @@ function InfoButton({
                   ))}
                 </tbody>
               </table>
+              {(() => {
+                const prod = rows.find((r) => r.role === "divisor");
+                if (!prod) return null;
+                return (
+                  <div className="mt-2 flex items-center justify-between rounded-md bg-zinc-50 px-2 py-1.5 dark:bg-zinc-800/50">
+                    <span className="font-mono text-[11px] text-zinc-600 dark:text-zinc-300">
+                      {prod.device}
+                      <span className="text-zinc-400">·{prod.sensor}</span>
+                      <span className="ml-1 block text-[9px] uppercase tracking-wide text-zinc-400">
+                        Production · sum of selected days
+                      </span>
+                    </span>
+                    <span className="font-semibold tabular-nums text-zinc-800 dark:text-zinc-100">
+                      {fmtNum(prod.consumption)}
+                    </span>
+                  </div>
+                );
+              })()}
+              </>
             )}
             </div>
             </div>
