@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { type CardItem, type Category } from "@/lib/dashboardData";
 import {
+  BOUNDARY_SNAP_MS,
   breakdownForCard,
   computeCardValue,
   computeFormulaValue,
@@ -17,6 +18,7 @@ import TimeRangePicker, {
   computeRange,
   type TimeRange,
 } from "./TimeRangePicker";
+import TrBaseInput, { TR_BASE_DEFAULT } from "./TrBaseInput";
 
 // Presets whose end is "now" — their window must keep advancing with the clock
 // so the data refreshes as real time moves forward.
@@ -59,6 +61,20 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
     return { ...r, periodicity: "Daily", presetLabel: "Current Month" };
   });
 
+  // Global TR Base coefficient (single source of truth) — persisted to
+  // localStorage; drives TR / TRH / IkW/TR everywhere via the fetch ctx.
+  const [trBase, setTrBaseState] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const s = Number(window.localStorage.getItem("tr_base"));
+      if (Number.isFinite(s) && s > 0) return s;
+    }
+    return TR_BASE_DEFAULT;
+  });
+  const setTrBase = (n: number) => {
+    setTrBaseState(n);
+    if (typeof window !== "undefined") window.localStorage.setItem("tr_base", String(n));
+  };
+
   // Search highlights in place within the active tab — matches get a ring.
   const matchIds = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -99,8 +115,17 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
     let cancelled = false;
     const sTime = range.start.getTime();
     const eTime = range.end.getTime();
-    // Window context for formula (chiller TR) cards: bucketing uses the period.
-    const ctx = { startMs: sTime, endMs: eTime, period: range.periodicity };
+    // Window context for formula (chiller TR) cards: bucketing uses the period,
+    // and trBase drives the TR coefficient across every chiller metric. These
+    // are the TRUE cycle boundaries (06:00→06:00) — the calculation never moves.
+    const ctx = { startMs: sTime, endMs: eTime, period: range.periodicity, trBase };
+    // Fetch a slightly wider window (±1 min) than the cycle so a data point just
+    // before/after 06:00 is available to snap the boundary reading to (when
+    // nothing lands exactly on 06:00). The extra points sit outside [sTime,eTime]
+    // and are ignored by every window-bounded aggregation, so only the boundary
+    // snap uses them — the cycle time itself is unchanged.
+    const fetchStart = sTime - BOUNDARY_SNAP_MS;
+    const fetchEnd = eTime + BOUNDARY_SNAP_MS;
 
     // Compute a card's value from the fetched map (consumption / formula / live).
     const valueOf = (c: CardItem, map: Map<string, SensorPoint>) =>
@@ -155,7 +180,7 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
       setBreakdowns(nb);
     };
 
-    fetchSensors(pairs, sTime, eTime, render).then(({ map, lastDPs, errors }) => {
+    fetchSensors(pairs, fetchStart, fetchEnd, render).then(({ map, lastDPs, errors }) => {
       if (cancelled) return;
       // Finalize: compute every card (missing sensors count as 0). The lastDPs
       // fallback fills first/last DP + timestamp when the window has no data.
@@ -185,7 +210,7 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
     return () => {
       cancelled = true;
     };
-  }, [cards, range]);
+  }, [cards, range, trBase]);
 
   // Now-anchored presets (Today, Current Month, …) keep their end at the live
   // clock: on each tick we recompute the range so its window — and therefore the
@@ -313,6 +338,9 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
               )}
             </div>
 
+            {/* Global TR Base coefficient — drives every chiller TR/TRH metric */}
+            <TrBaseInput value={trBase} onChange={setTrBase} />
+
             {/* Global duration picker — always rendered (present in SSR HTML) */}
             <TimeRangePicker value={range} onApply={setRange} />
           </div>
@@ -367,6 +395,7 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
               value={valueFor(c)}
               breakdown={breakdowns.get(c.id)}
               lastTs={lastTsFor(c)}
+              trBase={trBase}
               query={query}
               matched={matchIds.has(c.id)}
               dimmed={searching && !matchIds.has(c.id)}

@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { CardItem } from "@/lib/dashboardData";
 import type { SensorBreakdown } from "@/lib/iosense";
+import { TR_BASE_DEFAULT } from "./TrBaseInput";
 
 // Wrap every case-insensitive occurrence of `query` in the label with a <mark>.
 function highlightLabel(label: string, query: string): ReactNode {
@@ -49,15 +50,26 @@ const fmtTs = (s: string | null): string =>
     : "";
 
 // Human-readable "how this value was calculated" line from the sensor rows.
-function calcSummary(card: CardItem, rows: SensorBreakdown[], value: string): string {
+function calcSummary(
+  card: CardItem,
+  rows: SensorBreakdown[],
+  value: string,
+  trBase: number,
+): string {
   const u = card.unit ? ` ${card.unit}` : "";
   if (card.formula?.kind === "cdaSec") {
     const num = rows.filter((r) => r.role === "numerator").reduce((a, r) => a + r.consumption, 0);
     const den = rows.filter((r) => r.role === "denominator").reduce((a, r) => a + r.consumption, 0);
     return `Σ consumption (${fmtNum(num)} kWh) ÷ air volume (${fmtNum(den)} m³) = ${value}${u}`;
   }
+  if (card.formula?.kind === "chillerRatio") {
+    // firstVal = per-chiller consumption; lastVal = per-chiller TRH.
+    const cons = rows.reduce((a, r) => a + (r.firstVal ?? 0), 0);
+    const trh = rows.reduce((a, r) => a + (r.lastVal ?? 0), 0);
+    return `Total Energy Consumption (${fmtNum(cons)}) ÷ Total TRH (${fmtNum(trh)}) = ${value}${u}  ·  TR = ${trBase} × ΔT ÷ ${card.formula.deltaDiv}`;
+  }
   if (card.formula?.kind === "chillerSum") {
-    return `Σ of ${rows.length} chillers — consumption ÷ TR, where TR = ${card.formula.powerDiv} × ΔT ÷ ${card.formula.deltaDiv} (running-hours weighted) = ${value}${u}`;
+    return `Σ of ${rows.length} chillers — consumption ÷ TR, where TR = ${trBase} × ΔT ÷ ${card.formula.deltaDiv} (running-hours weighted) = ${value}${u}`;
   }
   const live = card.liveConfig;
   if (live) {
@@ -89,10 +101,12 @@ function InfoButton({
   card,
   value,
   rows,
+  trBase,
 }: {
   card: CardItem;
   value: string;
   rows: SensorBreakdown[];
+  trBase: number;
 }) {
   const label = card.label;
   const [open, setOpen] = useState(false);
@@ -154,7 +168,7 @@ function InfoButton({
               <span className="mb-0.5 block text-[9px] uppercase tracking-wide text-indigo-400 dark:text-indigo-400/70">
                 How this is calculated
               </span>
-              {calcSummary(card, rows, value)}
+              {calcSummary(card, rows, value, trBase)}
             </div>
             {card.formula?.kind === "cdaSec" ? (
               // CDA SEC: meter consumption (kWh) + flow AVERAGE over the window.
@@ -289,8 +303,8 @@ function InfoButton({
                 <thead>
                   <tr className="text-left text-[10px] uppercase tracking-wide text-zinc-400">
                     <th className="py-1 pr-2 font-medium">Device · Sensor</th>
-                    <th className="py-1 px-1 text-right font-medium">First</th>
-                    <th className="py-1 px-1 text-right font-medium">Last</th>
+                    <th className="py-1 px-1 text-right font-medium">Start reading</th>
+                    <th className="py-1 px-1 text-right font-medium">End reading</th>
                     <th className="py-1 pl-1 text-right font-medium">Consumption</th>
                   </tr>
                 </thead>
@@ -331,6 +345,12 @@ function InfoButton({
                   ))}
                 </tbody>
               </table>
+              <div className="mt-1 text-[9px] leading-snug text-zinc-400">
+                Start / End are the cumulative-meter readings at the cycle
+                boundaries (06:00 → 06:00 / now). When no point lands exactly on
+                the boundary, the closest logged point within ±1 min is used —
+                the time shown is that actual data point.
+              </div>
               {(() => {
                 const prod = rows.find((r) => r.role === "divisor");
                 if (!prod) return null;
@@ -376,6 +396,7 @@ export default function MetricCard({
   value,
   breakdown,
   lastTs = null,
+  trBase = TR_BASE_DEFAULT,
   query = "",
   matched = false,
   dimmed = false,
@@ -387,6 +408,8 @@ export default function MetricCard({
   breakdown?: SensorBreakdown[];
   /** ISO timestamp of the most recent reading across the card's sensors. */
   lastTs?: string | null;
+  /** Global TR Base coefficient (for chiller formula tooltips). */
+  trBase?: number;
   /** Active search query — matched text in the label is highlighted. */
   query?: string;
   /** True when this card matches the active search (gets a ring). */
@@ -415,7 +438,7 @@ export default function MetricCard({
           {highlightLabel(card.label, query)}
         </p>
         {breakdown && breakdown.length > 0 && (
-          <InfoButton card={card} value={value} rows={breakdown} />
+          <InfoButton card={card} value={value} rows={breakdown} trBase={trBase} />
         )}
       </div>
 

@@ -128,18 +128,39 @@ function cumulativeDelta(p?: SensorPoint): number {
   return d > 0 ? d : 0;
 }
 
-// Production over the window = sum of all readings.
-function sumValues(p?: SensorPoint): number {
+// Production over the window = sum of all readings. When a window context is
+// given, only readings inside the TRUE boundaries [startMs, endMs] are summed —
+// the fetch window is padded ±1 min (for boundary snapping), so padded neighbor
+// points must be excluded here or they'd inflate the production sum.
+function sumValues(p?: SensorPoint, ctx?: WindowCtx): number {
   if (!p?.data) return 0;
-  return Object.values(p.data).reduce((a, b) => a + (Number(b) || 0), 0);
+  let total = 0;
+  for (const [k, v] of Object.entries(p.data)) {
+    if (ctx) {
+      const t = Date.parse(k);
+      if (!Number.isNaN(t) && (t < ctx.startMs || t > ctx.endMs)) continue;
+    }
+    total += Number(v) || 0;
+  }
+  return total;
 }
 
-// Latest (most recent) reading in the window — used by live cards.
-function latestValue(p?: SensorPoint): number | null {
+// Latest (most recent) reading in the window — used by live cards. With a
+// window context, padded points logged after the true end boundary are ignored.
+function latestValue(p?: SensorPoint, ctx?: WindowCtx): number | null {
   if (!p?.data) return null;
-  const ks = Object.keys(p.data).sort();
-  if (ks.length === 0) return null;
-  return p.data[ks[ks.length - 1]];
+  let bestT = -Infinity;
+  let bestV: number | null = null;
+  for (const [k, v] of Object.entries(p.data)) {
+    const t = Date.parse(k);
+    if (Number.isNaN(t)) continue;
+    if (ctx && t > ctx.endMs) continue;
+    if (t >= bestT) {
+      bestT = t;
+      bestV = Number(v);
+    }
+  }
+  return bestV;
 }
 
 /* ----------------------- Chiller TR (formula cards) ---------------------- */
@@ -162,18 +183,36 @@ function samples(p?: SensorPoint): Sample[] {
 const mean = (xs: number[]): number | null =>
   xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 
-// Cumulative-meter reading held AT time `b` = value of the last sample at or
-// before b (a meter holds its value between logs); if none, the first sample.
-// This is what gives the EXACT 06:00 boundary reading even when the nearest
-// logged point is a little before/after the boundary.
-function readingAt(s: Sample[], b: number): number | null {
+// How far from the boundary we'll accept a logged sample as the boundary
+// reading. If nothing lands exactly on 06:00, use the closest sample within
+// ±1 minute (before OR after, whichever is nearer) — without moving the
+// boundary itself, so the cycle time (06:00→06:00) is unchanged. Neighbor
+// points just outside the window are made available by padding the fetch
+// window by this same amount (see fetchSensors caller).
+export const BOUNDARY_SNAP_MS = 60_000; // ±1 minute
+
+// The SAMPLE used as the cumulative-meter reading AT time `b`. Prefer a sample
+// on/near the boundary: if the closest logged sample is within ±1 min of `b`
+// (before or after), use it — this gives the ~06:00 reading even when nothing
+// lands on 06:00 exactly. Otherwise fall back to the held value (last sample at
+// or before b — a meter holds its value between logs); if none, the first.
+// Returns the sample (value AND its real timestamp) so callers can report the
+// actual data point that was considered.
+function readingSampleAt(s: Sample[], b: number): Sample | null {
   if (s.length === 0) return null;
-  let val: number | null = null;
+  let nearest: Sample | null = null;
+  let held: Sample | null = null;
   for (const x of s) {
-    if (x.t <= b) val = x.v;
-    else break;
+    if (nearest == null || Math.abs(x.t - b) < Math.abs(nearest.t - b)) nearest = x;
+    if (x.t <= b) held = x;
   }
-  return val != null ? val : s[0].v;
+  if (nearest && Math.abs(nearest.t - b) <= BOUNDARY_SNAP_MS) return nearest;
+  return held != null ? held : s[0];
+}
+// Value of the boundary reading at `b` (see readingSampleAt).
+function readingAt(s: Sample[], b: number): number | null {
+  const x = readingSampleAt(s, b);
+  return x ? x.v : null;
 }
 // Consumption over [sTime, eTime] = reading(eTime) − reading(sTime), clamped ≥ 0.
 // Anchored to the exact window boundaries (06:00 → 06:00 / now).
@@ -231,6 +270,9 @@ export interface WindowCtx {
   startMs: number;
   endMs: number;
   period?: string;
+  /** Global TR Base coefficient (TR = trBase × ΔT ÷ deltaDiv). Overrides the
+   *  per-card powerDiv so one dashboard control drives every chiller metric. */
+  trBase?: number;
 }
 
 // Bucket size (ms) for a periodicity label.
@@ -267,20 +309,24 @@ function chillerTR(
   trBase: number,
   deltaDiv: number,
   ctx?: WindowCtx,
-): { tr: number | null; dt: number | null; runningHours: number } {
+): { tr: number | null; dt: number | null; runningHours: number; trh: number } {
   const inlet = samples(map.get(key(ch.supply.device, ch.supply.sensor)));
   const outlet = samples(map.get(key(ch.ret.device, ch.ret.sensor)));
   const status = ch.status
     ? samples(map.get(key(ch.status.device, ch.status.sensor)))
     : [];
 
+  // Global TR Base (from the dashboard control) overrides the per-card powerDiv.
+  const base = ctx?.trBase ?? trBase;
   const wIn = mean(inlet.map((x) => x.v));
   const wOut = mean(outlet.map((x) => x.v));
   const dt = wIn != null && wOut != null ? wIn - wOut : null;
-  const instTR = dt != null ? (trBase * dt) / deltaDiv : null;
+  const instTR = dt != null ? (base * dt) / deltaDiv : null;
 
-  // No window context or no status series → plain instantaneous TR.
-  if (!ctx || status.length === 0) return { tr: instTR, dt, runningHours: 0 };
+  // No window context or no status series → plain instantaneous TR (TRH unknown
+  // without running hours → 0, so it won't contribute to a Total-TRH sum).
+  if (!ctx || status.length === 0)
+    return { tr: instTR, dt, runningHours: 0, trh: 0 };
 
   // Bucket the window; weight each bucket's TR by its running hours.
   let bucketMs = bucketMsFor(ctx.period);
@@ -296,10 +342,10 @@ function chillerTR(
     const aIn = avgInRange(inlet, bStart, bEnd);
     const aOut = avgInRange(outlet, bStart, bEnd);
     if (aIn == null || aOut == null) continue;
-    trh += ((trBase * (aIn - aOut)) / deltaDiv) * rh;
+    trh += ((base * (aIn - aOut)) / deltaDiv) * rh;
   }
-  if (rhTotal > 0) return { tr: trh / rhTotal, dt, runningHours: rhTotal };
-  return { tr: instTR, dt, runningHours: 0 }; // fallback
+  if (rhTotal > 0) return { tr: trh / rhTotal, dt, runningHours: rhTotal, trh };
+  return { tr: instTR, dt, runningHours: 0, trh: 0 }; // fallback (never ran)
 }
 
 // Latest timestamp in the window (for the card footer).
@@ -381,6 +427,24 @@ export function computeFormulaValue(
     if (!anyNum || den <= 0) return "NA";
     return (num / den).toFixed(3);
   }
+  if (f.kind === "chillerRatio") {
+    // IkW/TR = Σ consumption (all chillers) ÷ Σ TRH (running chillers only).
+    let totalCons = 0;
+    let totalTRH = 0;
+    let any = false;
+    for (const ch of f.chillers) {
+      const pp = map.get(key(ch.power.device, ch.power.sensor));
+      if (pp) any = true;
+      totalCons += ctx
+        ? boundaryDelta(pp, ctx.startMs, ctx.endMs)
+        : cumulativeDelta(pp);
+      const { trh } = chillerTR(ch, map, f.powerDiv, f.deltaDiv, ctx);
+      totalTRH += trh; // 0 for chillers that never ran → running-only sum
+    }
+    if (!any) return "NA"; // no chiller data at all
+    if (totalTRH <= 0) return "NA"; // Total TRH = 0 → undefined
+    return (totalCons / totalTRH).toFixed(2);
+  }
   let total = 0;
   let any = false;
   for (const ch of f.chillers) {
@@ -440,19 +504,23 @@ function detail(
   const p = map.get(key(device, sensor));
   const ks = p?.data ? Object.keys(p.data).sort() : [];
   if (p?.data && ks.length > 0) {
-    // Cumulative meters (numerator/denominator) are anchored to the EXACT window
-    // boundaries (06:00 → 06:00 / now): first = reading held at start, last =
-    // reading held at end, with timestamps snapped to those boundaries.
+    // Cumulative meters (numerator/denominator) are anchored to the window
+    // boundaries (06:00 → 06:00 / now): first = reading at start, last = reading
+    // at end. Each boundary reading snaps to the closest logged point within
+    // ±1 min of the boundary — and the timestamp reported is that point's ACTUAL
+    // log time (when the data point was considered), not the boundary itself.
     if (role !== "divisor" && ctx) {
       const s = samples(p);
-      const firstVal = readingAt(s, ctx.startMs);
-      const lastVal = readingAt(s, ctx.endMs);
+      const first = readingSampleAt(s, ctx.startMs);
+      const last = readingSampleAt(s, ctx.endMs);
+      const firstVal = first ? first.v : null;
+      const lastVal = last ? last.v : null;
       const consumption =
         firstVal != null && lastVal != null ? Math.max(0, lastVal - firstVal) : 0;
       return {
         device, sensor, role,
-        firstTs: new Date(ctx.startMs).toISOString(), firstVal,
-        lastTs: new Date(ctx.endMs).toISOString(), lastVal,
+        firstTs: new Date(first ? first.t : ctx.startMs).toISOString(), firstVal,
+        lastTs: new Date(last ? last.t : ctx.endMs).toISOString(), lastVal,
         consumption, hasData: true,
       };
     }
@@ -462,7 +530,7 @@ function detail(
     const lastVal = p.data[lastTs];
     // Production divisor is summed; everything else is a cumulative delta.
     const consumption =
-      role === "divisor" ? sumValues(p) : Math.max(0, lastVal - firstVal);
+      role === "divisor" ? sumValues(p, ctx) : Math.max(0, lastVal - firstVal);
     return { device, sensor, role, firstTs, firstVal, lastTs, lastVal, consumption, hasData: true };
   }
   // Window has no data → fall back to the sensor's latest available reading
@@ -535,6 +603,31 @@ export function breakdownForCard(
     }
     return rows;
   }
+  if (card.formula?.kind === "chillerRatio") {
+    // One row per chiller: consumption (First), TRH (Last). Running chillers
+    // have TRH > 0; OFF chillers show TRH 0 (excluded from Total TRH).
+    const f = card.formula;
+    return f.chillers.map((ch, i) => {
+      const pp = map.get(key(ch.power.device, ch.power.sensor));
+      const cons = pp
+        ? ctx
+          ? boundaryDelta(pp, ctx.startMs, ctx.endMs)
+          : cumulativeDelta(pp)
+        : null;
+      const { trh } = chillerTR(ch, map, f.powerDiv, f.deltaDiv, ctx);
+      return {
+        device: `Chiller ${i + 1}`,
+        sensor: `${ch.power.device}·${ch.power.sensor}`,
+        role: "numerator" as const,
+        firstTs: null,
+        firstVal: cons, // consumption (kWh delta)
+        lastTs: lastTsOf(pp),
+        lastVal: trh, // TRH (Ton-Refrigeration-Hours; 0 if not running)
+        consumption: cons ?? 0,
+        hasData: !!pp,
+      };
+    });
+  }
   if (card.formula?.kind === "chillerSum") {
     // Formula cards: one row per chiller — consumption, TR, and the contribution.
     const f = card.formula;
@@ -602,7 +695,7 @@ export function computeCardValue(
   // across the numerator sensors (a single-sensor card → just its latest value).
   if (cfg.op === "latest") {
     const vals = cfg.numerator
-      .map((t) => latestValue(map.get(key(t.device, t.sensor))))
+      .map((t) => latestValue(map.get(key(t.device, t.sensor)), ctx))
       .filter((v): v is number => v != null);
     if (vals.length === 0) return "NA";
     return round2(vals.reduce((a, b) => a + b, 0) / vals.length);
@@ -624,7 +717,7 @@ export function computeCardValue(
   const net = num - sub;
 
   if (cfg.divisor) {
-    const prod = sumValues(map.get(key(cfg.divisor.device, cfg.divisor.sensor)));
+    const prod = sumValues(map.get(key(cfg.divisor.device, cfg.divisor.sensor)), ctx);
     if (prod <= 0) return "NA";
     return (net / prod).toFixed(2);
   }

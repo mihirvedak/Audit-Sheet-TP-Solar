@@ -72,6 +72,20 @@ export interface ChillerSumConfig {
 }
 
 /**
+ * Chiller plant IkW/TR = Total Energy Consumption ÷ Total TRH.
+ *  - Total Energy Consumption = Σ kWh meter delta over ALL chillers (running + OFF).
+ *  - Total TRH = Σ Ton-Refrigeration-Hours over RUNNING chillers only (an OFF
+ *    chiller accrues 0 running hours → 0 TRH, so it drops out naturally).
+ * NA if no chiller data or Total TRH = 0.
+ */
+export interface ChillerRatioConfig {
+  kind: "chillerRatio";
+  powerDiv: number; // trBase for TR = powerDiv × ΔT ÷ deltaDiv
+  deltaDiv: number;
+  chillers: ChillerTerm[];
+}
+
+/**
  * Compressed-air specific-energy card (kWh/m³):
  *   Σ consumption(numerator) ÷ ( factor × runHours(runGate > runThreshold) × Σ avg(flow) )
  * Numerator = energy meters (Σ boundary delta). Denominator = air volume:
@@ -87,7 +101,7 @@ export interface CdaSecConfig {
   factor: number;
 }
 
-export type FormulaConfig = ChillerSumConfig | CdaSecConfig;
+export type FormulaConfig = ChillerSumConfig | ChillerRatioConfig | CdaSecConfig;
 
 const chiller = (
   power: string,
@@ -111,7 +125,7 @@ export const FORMULA_CONFIGS: Record<number, FormulaConfig> = {
   // (status D37 == 1) off the TPSLCH_* inlet/outlet temps; trBase = powerDiv = 810.
   // chiller(powerMeter, trInlet, trOutlet, statusD37)
   82: {
-    kind: "chillerSum",
+    kind: "chillerRatio",
     powerDiv: 810,
     deltaDiv: 3.024,
     chillers: [
@@ -129,7 +143,7 @@ export const FORMULA_CONFIGS: Record<number, FormulaConfig> = {
   // running-hours-weighted off the TPSGMHVAC_* D25/D26 temps; status flag = D0
   // (1 = Running). chiller(powerMeter, trInlet D25, trOutlet D26, statusD0)
   83: {
-    kind: "chillerSum",
+    kind: "chillerRatio",
     powerDiv: 810, // trBase for TR = 810 × ΔT ÷ 3.024
     deltaDiv: 3.024,
     chillers: [
@@ -144,7 +158,13 @@ export const FORMULA_CONFIGS: Record<number, FormulaConfig> = {
   //   Σ consumption(meters) ÷ ( 60 × runHours(TPSGCCDA_C3 D1 > 1) × (avg D1 + avg D3) )
   84: {
     kind: "cdaSec",
-    numerator: terms(["TPSGHTCSS_Y1(D160)", "TPSGHTCSS_Y1(D1)", "TPSGHTCSS_X1(D126)"]),
+    numerator: terms([
+      "TPSGHTCSS_Y1(D160)",
+      "TPSGHTCSS_Y1(D1)",
+      "TPSGHTCSS_X1(D126)",
+      "LT_Compressor_02_4F1(D0)",
+      "LT_Compressor_02_4F1(D1)",
+    ]),
     flow: terms(["TPSGCCDA_C3(D1)", "TPSGCCDA_C3(D3)"]),
     runGate: term("TPSGCCDA_C3(D1)"),
     runThreshold: 1,
@@ -155,7 +175,13 @@ export const FORMULA_CONFIGS: Record<number, FormulaConfig> = {
   //   Σ consumption(meters) ÷ ( 60 × runHours(TPSGMCDA_C3 D1 > 1) × avg D1 )
   85: {
     kind: "cdaSec",
-    numerator: terms(["TPSGHTCSS_N1(D62)", "TPSGHTCSS_P1(D146)", "TPSGHTCSS_N1(D355)"]),
+    numerator: terms([
+      "TPSGHTCSS_N1(D62)",
+      "TPSGHTCSS_P1(D146)",
+      "TPSGHTCSS_N1(D355)",
+      "CDA_MODULE_A1(D0)",
+      "CDA_MODULE_A1(D1)",
+    ]),
     flow: terms(["TPSGMCDA_C3(D1)"]),
     runGate: term("TPSGMCDA_C3(D1)"),
     runThreshold: 1,
