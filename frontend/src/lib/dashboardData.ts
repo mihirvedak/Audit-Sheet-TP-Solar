@@ -479,6 +479,13 @@ export function configuredReading(card: CardItem, rangeKey: string): Reading {
 /* Build                                                               */
 /* ------------------------------------------------------------------ */
 
+// Rows hidden from the dashboard. Kept in RAW so every LATER row's index-based
+// config lookup (CARD_CONFIGS / LIVE_CONFIGS / FORMULA_CONFIGS) stays aligned —
+// we drop them only after the map. 24–39 = MODULE-PROC-HVAC … MODULE-PROC-DG.
+const REMOVED_ROWS: ReadonlySet<number> = new Set(
+  Array.from({ length: 39 - 24 + 1 }, (_, k) => 24 + k),
+);
+
 function build(): CardItem[] {
   return RAW.map((label, i) => {
     const row = i + 1;
@@ -492,7 +499,7 @@ function build(): CardItem[] {
       ...(liveConfig ? { liveConfig } : {}),
       ...(formula ? { formula } : {}),
     };
-  });
+  }).filter((c) => !REMOVED_ROWS.has(c.row));
 }
 
 export const cards: CardItem[] = build();

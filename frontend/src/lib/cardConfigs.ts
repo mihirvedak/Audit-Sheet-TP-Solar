@@ -627,9 +627,15 @@ export const CARD_CONFIGS: Record<number, CardConfig> = {
      consumption ÷ SUM(MODULE_PRODUCTION_A1·D0 over the window). Numerator meters
      use the common D0 sensor (Prod Phase / CDA HT use explicit TPSGHTCSS sensors). */
 
-  // 147 — HVAC HT
+  // 147 — HVAC HT: Σ(module HVAC-HT chiller meters) ÷ module production.
   147: { metric: "consumption", method: "getAutoSampled",
-    numerator: d0Terms(["MODULE_HVAC_HT_A1"]), divisor: term(MODULE) },
+    numerator: terms([
+      "TPSGHTCSS_M1(D442)",
+      "TPSGHTCSS_N1(D2)",
+      "TPSGHTCSS_N1(D295)",
+      "TPSGHTCSS_P1(D206)",
+    ]),
+    divisor: term(MODULE) },
 
   // 148 — CDA HT
   148: { metric: "consumption", method: "getAutoSampled",
