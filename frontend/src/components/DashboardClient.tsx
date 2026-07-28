@@ -262,7 +262,7 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
     <div className="min-h-screen w-full bg-zinc-50 dark:bg-zinc-950">
       {/* Header + controls */}
       <header className="sticky top-0 z-20 border-b border-zinc-200 bg-white/80 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
-        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+        <div className="w-full px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
@@ -381,13 +381,13 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
 
       {/* All cards stay visible, in the exact order of the source sheet.
           Searching highlights matches (and dims the rest). */}
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <main className="w-full px-4 py-8 sm:px-6 lg:px-8">
         {searching && matchIds.size === 0 && (
           <div className="mb-4 rounded-lg border border-dashed border-zinc-300 bg-white px-4 py-3 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-400">
             No cards match <span className="font-semibold">“{query}”</span>.
           </div>
         )}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
           {tabCards.map((c) => (
             <MetricCard
               key={c.id}
