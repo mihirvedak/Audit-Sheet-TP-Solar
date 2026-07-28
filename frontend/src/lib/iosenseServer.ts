@@ -228,16 +228,17 @@ export async function fetchSensorsServer(
   ssoToken?: string,
 ): Promise<SensorPoint[]> {
   const downscale = computeDownscale(sTime, eTime);
-  // Production divisors (…_PRODUCTION_A1) are SUMMED over the window, so they
-  // must include every data point of the selected duration — fetch them at full
-  // resolution (downscale 1). Everything else is downsampled for speed.
+  // Production divisors (…_PRODUCTION_A1) are SUMMED over the window. They post
+  // ~1 point/day, so the normal downsample already keeps every point (24h apart
+  // never merge into one bucket) — but we cap their bucket at 1h so denser
+  // production streams aren't dropped, without the huge cost of full resolution.
   const isProduction = (devID: string) => /_PRODUCTION_A1$/i.test(devID);
   const devConfig: DevCfg[] = pairs.map((p) => ({
     sTime,
     eTime,
     devID: p.devID,
     sensor: p.sensor,
-    downscale: isProduction(p.devID) ? 1 : downscale,
+    downscale: isProduction(p.devID) ? Math.min(downscale, 3600) : downscale,
   }));
   const CHUNK = 20;
   const chunks: DevCfg[][] = [];
