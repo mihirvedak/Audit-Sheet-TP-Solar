@@ -36,9 +36,9 @@ loadEnvFiles();
 // Read AFTER loadEnvFiles() so values from .env.local are picked up.
 const BASE = process.env.IOSENSE_BASE_URL || "https://connector.iosense.io/api";
 const ORG = process.env.IOSENSE_ORG || "https://iosense.io";
-const USER = process.env.IOSENSE_USERNAME || "";
-const PASS = process.env.IOSENSE_PASSWORD || "";
-// Optional: use a ready-made token instead of username/password login.
+// Auth is SSO-only: the Bearer token comes from an SSO-token exchange (the
+// portal appends ?ssoToken=… to the dashboard URL) or a ready-made IOSENSE_TOKEN.
+// There is NO username/password login.
 const STATIC_TOKEN = process.env.IOSENSE_TOKEN || "";
 // Where the exchanged token is persisted. Default to a project-relative file so
 // it survives machine reboots (/tmp is cleared on reboot, which would drop the
@@ -110,31 +110,6 @@ let cachedToken: string | null = null;
 // during a single session (window changes reuse the cached Bearer).
 let lastSso: string | null = null;
 
-async function login(): Promise<string> {
-  if (!USER || !PASS) {
-    throw new Error("IOsense credentials/token not configured");
-  }
-  const res = await fetch(`${BASE}/login`, {
-    method: "POST",
-    headers: {
-      origin: ORG,
-      organisation: ORG,
-      "ngsw-bypass": "true",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ username: USER, password: PASS }),
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!json?.success || !json?.authorization) {
-    throw new Error(
-      json?.errors?.join(", ") || `IOsense login failed (HTTP ${res.status})`,
-    );
-  }
-  cachedToken = json.authorization as string;
-  persistToken(cachedToken);
-  return cachedToken;
-}
-
 // Exchange a one-time SSO token (from the portal URL, ~60s lifetime) for a
 // real Bearer token, per the IOsense SDK flow.
 async function exchangeSSO(ssoToken: string): Promise<string> {
@@ -161,26 +136,25 @@ async function exchangeSSO(ssoToken: string): Promise<string> {
 }
 
 /**
- * Resolve a usable Bearer token, in priority order:
+ * Resolve a usable Bearer token — SSO ONLY (no username/password), in order:
  *  1. IOSENSE_TOKEN (static, server env)
- *  2. cached / disk-persisted token from a prior exchange (unless forced) —
- *     this is what lets the user authenticate once and never re-enter a token
- *  3. SSO token from the request (exchanged once, then cached + persisted)
- *  4. username/password login
+ *  2. A fresh SSO token from the request (portal URL) → exchanged + persisted
+ *  3. cached / disk-persisted token from a prior exchange (unless forced)
+ *  4. re-exchange the SSO token (e.g. forced refresh after a 401)
+ * Throws a clear, actionable error if none is available.
  */
 async function getToken(ssoToken?: string, force = false): Promise<string> {
   if (STATIC_TOKEN) return STATIC_TOKEN;
 
   // A newly-arrived SSO token (fresh dashboard open) → exchange it immediately
-  // and refresh the saved token, so we never depend on a stale/expired one.
-  // The same token within a session is not re-exchanged (it's one-time use).
+  // and refresh the saved token. Same token within a session isn't re-exchanged.
   if (ssoToken && ssoToken !== lastSso) {
     try {
       const t = await exchangeSSO(ssoToken);
       lastSso = ssoToken;
       return t;
     } catch {
-      // fresh token already consumed/invalid → fall through to cache/login
+      // consumed/invalid → fall through to the persisted token
     }
   }
 
@@ -188,27 +162,17 @@ async function getToken(ssoToken?: string, force = false): Promise<string> {
     if (!cachedToken) cachedToken = loadPersistedToken();
     if (cachedToken) return cachedToken;
   }
+
+  // Forced refresh (expired token) or no cache → try exchanging the SSO token.
   if (ssoToken) {
-    try {
-      const t = await exchangeSSO(ssoToken);
-      lastSso = ssoToken;
-      return t;
-    } catch (e) {
-      // Only fall back to credential login if we actually have credentials;
-      // otherwise surface the SSO failure so it's diagnosable.
-      if (!USER || !PASS) throw e;
-    }
+    const t = await exchangeSSO(ssoToken);
+    lastSso = ssoToken;
+    return t;
   }
-  // Credential login. If it fails transiently, degrade to any token we already
-  // have (cached in memory or persisted on disk) rather than erroring the whole
-  // dashboard — a stale token still beats "credentials not configured".
-  try {
-    return await login();
-  } catch (e) {
-    const fallback = cachedToken || loadPersistedToken();
-    if (fallback) return fallback;
-    throw e;
-  }
+
+  throw new Error(
+    "No IOsense SSO token. Open the dashboard via the IOsense portal (…?ssoToken=…) or set IOSENSE_TOKEN.",
+  );
 }
 
 async function putChunk(
