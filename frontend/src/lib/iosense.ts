@@ -20,13 +20,45 @@ export interface SensorPoint {
 
 const key = (devID: string, sensor: string) => `${devID}:${sensor}`;
 
-// SSO token the portal appends to the dashboard URL (?token / ?ssoToken /
-// ?loginToken). Passed to the server, which exchanges it for a Bearer token.
+// SSO token the portal appends to the dashboard URL. Different portals use
+// different param names and may put it in the query string OR the hash, so we
+// look broadly: a set of known names first, then ANY param whose key looks
+// token-ish. Passed to the server, which exchanges it (or uses it directly).
+const SSO_PARAM_NAMES = [
+  "ssoToken", "token", "loginToken", "authToken", "accessToken",
+  "access_token", "sso", "jwt", "auth", "iosense_auth_token", "tkn",
+];
 function readSsoToken(): string | undefined {
   if (typeof window === "undefined") return undefined;
-  const p = new URLSearchParams(window.location.search);
-  const t = p.get("ssoToken") || p.get("token") || p.get("loginToken");
-  return t ? t.trim() : undefined;
+  const pick = (qs: string): string | undefined => {
+    if (!qs) return undefined;
+    const p = new URLSearchParams(qs.replace(/^[#?]/, ""));
+    for (const n of SSO_PARAM_NAMES) {
+      const v = p.get(n);
+      if (v) return v.trim();
+    }
+    for (const [k, v] of p.entries()) {
+      if (v && /token|sso|auth|jwt/i.test(k)) return v.trim();
+    }
+    return undefined;
+  };
+  const { search, hash } = window.location;
+  const t = pick(search) || pick(hash);
+  if (!t) {
+    // Debug aid: list the param keys we DID see so the portal's actual param
+    // name is visible in the browser console.
+    try {
+      const keys = [
+        ...new URLSearchParams(search).keys(),
+        ...new URLSearchParams(hash.replace(/^#/, "")).keys(),
+      ];
+      // eslint-disable-next-line no-console
+      console.warn("[IOsense] no SSO token found in URL. Params seen:", keys);
+    } catch {
+      /* ignore */
+    }
+  }
+  return t;
 }
 
 /** Latest data point per sensor (window-independent), keyed by "devID:sensor". */

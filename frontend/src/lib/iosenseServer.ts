@@ -143,19 +143,28 @@ async function exchangeSSO(ssoToken: string): Promise<string> {
  *  4. re-exchange the SSO token (e.g. forced refresh after a 401)
  * Throws a clear, actionable error if none is available.
  */
+// Turn the token the portal handed us into a usable Bearer. First try exchanging
+// it (a short-lived one-time SSO token → Bearer). If exchange fails, assume the
+// portal passed an ALREADY-usable Bearer token and use it directly — the data
+// call validates it. Either way, no username/password.
+async function resolveProvided(token: string): Promise<string> {
+  try {
+    return await exchangeSSO(token);
+  } catch {
+    cachedToken = token;
+    persistToken(token);
+    return token;
+  }
+}
+
 async function getToken(ssoToken?: string, force = false): Promise<string> {
   if (STATIC_TOKEN) return STATIC_TOKEN;
 
-  // A newly-arrived SSO token (fresh dashboard open) → exchange it immediately
-  // and refresh the saved token. Same token within a session isn't re-exchanged.
+  // A newly-arrived token (fresh dashboard open) → resolve it immediately.
   if (ssoToken && ssoToken !== lastSso) {
-    try {
-      const t = await exchangeSSO(ssoToken);
-      lastSso = ssoToken;
-      return t;
-    } catch {
-      // consumed/invalid → fall through to the persisted token
-    }
+    const t = await resolveProvided(ssoToken);
+    lastSso = ssoToken;
+    return t;
   }
 
   if (!force) {
@@ -163,9 +172,9 @@ async function getToken(ssoToken?: string, force = false): Promise<string> {
     if (cachedToken) return cachedToken;
   }
 
-  // Forced refresh (expired token) or no cache → try exchanging the SSO token.
+  // Forced refresh (expired token) or no cache → resolve the provided token.
   if (ssoToken) {
-    const t = await exchangeSSO(ssoToken);
+    const t = await resolveProvided(ssoToken);
     lastSso = ssoToken;
     return t;
   }
