@@ -35,10 +35,8 @@ function readSsoToken(): string | undefined {
     const p = new URLSearchParams(qs.replace(/^[#?]/, ""));
     for (const n of SSO_PARAM_NAMES) {
       const v = p.get(n);
-      if (v) return v.trim();
-    }
-    for (const [k, v] of p.entries()) {
-      if (v && /token|sso|auth|jwt/i.test(k)) return v.trim();
+      // Only accept token-looking values (long / JWT), never short ids.
+      if (v && (v.length >= 40 || v.split(".").length === 3)) return v.trim();
     }
     return undefined;
   };

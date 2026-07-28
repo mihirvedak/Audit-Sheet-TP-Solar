@@ -25,9 +25,10 @@ export async function POST(req: Request) {
     ]);
     return Response.json({ data, lastDPs });
   } catch (err) {
-    return Response.json(
-      { error: String((err as Error)?.message ?? err) },
-      { status: 502 },
-    );
+    const msg = String((err as Error)?.message ?? err);
+    // Auth problems (no/invalid SSO token) are the client's to resolve → 401,
+    // not a misleading 502 "bad gateway".
+    const isAuth = /sso token|bearer|log|auth|unauthor/i.test(msg);
+    return Response.json({ error: msg }, { status: isAuth ? 401 : 502 });
   }
 }

@@ -144,23 +144,28 @@ async function exchangeSSO(ssoToken: string): Promise<string> {
  * Throws a clear, actionable error if none is available.
  */
 // Turn the token the portal handed us into a usable Bearer. First try exchanging
-// it (a short-lived one-time SSO token → Bearer). If exchange fails, assume the
-// portal passed an ALREADY-usable Bearer token and use it directly — the data
-// call validates it. Either way, no username/password.
+// it (a short-lived one-time SSO token → Bearer). If exchange fails but the value
+// itself looks like a real Bearer/JWT (long / dotted), use it directly. We only
+// PERSIST a token once it has actually worked (see markTokenGood) so a bad value
+// can never get stuck on disk.
 async function resolveProvided(token: string): Promise<string> {
   try {
-    return await exchangeSSO(token);
+    return await exchangeSSO(token); // persists on success
   } catch {
-    cachedToken = token;
-    persistToken(token);
-    return token;
+    // Looks like a real token already? (avoid persisting short junk params)
+    if (token.length >= 100 || token.split(".").length === 3) {
+      cachedToken = token; // in-memory only; persisted after it works
+      return token;
+    }
+    throw new Error(
+      "IOsense SSO token exchange failed and the value is not a usable Bearer token.",
+    );
   }
 }
 
 async function getToken(ssoToken?: string, force = false): Promise<string> {
   if (STATIC_TOKEN) return STATIC_TOKEN;
 
-  // A newly-arrived token (fresh dashboard open) → resolve it immediately.
   if (ssoToken && ssoToken !== lastSso) {
     const t = await resolveProvided(ssoToken);
     lastSso = ssoToken;
@@ -172,7 +177,6 @@ async function getToken(ssoToken?: string, force = false): Promise<string> {
     if (cachedToken) return cachedToken;
   }
 
-  // Forced refresh (expired token) or no cache → resolve the provided token.
   if (ssoToken) {
     const t = await resolveProvided(ssoToken);
     lastSso = ssoToken;
@@ -182,6 +186,11 @@ async function getToken(ssoToken?: string, force = false): Promise<string> {
   throw new Error(
     "No IOsense SSO token. Open the dashboard via the IOsense portal (…?ssoToken=…) or set IOSENSE_TOKEN.",
   );
+}
+
+// Called after a data request succeeds, so we only persist tokens that work.
+function markTokenGood(token: string): void {
+  if (token && token !== STATIC_TOKEN) persistToken(token);
 }
 
 async function putChunk(
@@ -253,8 +262,10 @@ export async function fetchSensorsServer(
   let { out, auth401 } = await run(token);
   if (auth401 && out.length === 0) {
     token = await getToken(ssoToken, true); // token expired → refresh once
-    ({ out } = await run(token));
+    ({ out, auth401 } = await run(token));
   }
+  // Persist the token only once it has actually returned data (never junk).
+  if (!auth401) markTokenGood(token);
   return out;
 }
 
