@@ -83,6 +83,14 @@ export interface ChillerRatioConfig {
   powerDiv: number; // trBase for TR = powerDiv × ΔT ÷ deltaDiv
   deltaDiv: number;
   chillers: ChillerTerm[];
+  /** Legacy mode for a specific card (CH_MOD_01), reproducing its dashboard value:
+   *   - trhAllChillers: sum TRH over ALL chillers (not just currently-running), and
+   *   - wholeWindowTrh: per-chiller TRH = (whole-window instantaneous TR) × running
+   *     hours — a single window-average ΔT, NOT daily buckets — and the sum is
+   *     SIGNED (a chiller whose ΔT reads negative, e.g. swapped supply/return
+   *     sensors, subtracts). Leave undefined for the standard running-now/daily. */
+  trhAllChillers?: boolean;
+  wholeWindowTrh?: boolean;
 }
 
 /**
@@ -146,6 +154,11 @@ export const FORMULA_CONFIGS: Record<number, FormulaConfig> = {
     kind: "chillerRatio",
     powerDiv: 810, // trBase for TR = 810 × ΔT ÷ 3.024
     deltaDiv: 3.024,
+    // CH_MOD_01 reproduces its dashboard value: consumption over all 4 chillers ÷
+    // Σ (whole-window TR × running hours) over all 4 chillers (signed — Chiller 4
+    // reads a negative ΔT and subtracts). Matches consumption / TRH ≈ 9.9.
+    trhAllChillers: true,
+    wholeWindowTrh: true,
     chillers: [
       chiller("TPSGHTCSS_M1(D442)", "TPSGMHVAC_A14(D25)", "TPSGMHVAC_A14(D26)", "TPSGMHVAC_A14(D0)"), // Chiller 1
       chiller("TPSGHTCSS_N1(D2)", "TPSGMHVAC_A15(D25)", "TPSGMHVAC_A15(D26)", "TPSGMHVAC_A15(D0)"), // Chiller 2

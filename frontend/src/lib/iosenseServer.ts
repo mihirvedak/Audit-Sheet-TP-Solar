@@ -241,22 +241,54 @@ export async function fetchSensorsServer(
     downscale: isProduction(p.devID) ? Math.min(downscale, 3600) : downscale,
   }));
   const CHUNK = 20;
-  const chunks: DevCfg[][] = [];
-  for (let i = 0; i < devConfig.length; i += CHUNK) {
-    chunks.push(devConfig.slice(i, i + CHUNK));
-  }
+  const keyOf = (d: { devID: string; sensor: string }) => `${d.devID}:${d.sensor}`;
+  const hasPoints = (p?: SensorPoint) =>
+    !!p?.data && Object.keys(p.data).length > 0;
 
-  async function run(token: string) {
+  // Fetch a list of DevCfgs split into chunks of `size`, tolerating per-chunk
+  // failures (a failed/timed-out chunk contributes nothing rather than rejecting
+  // the whole batch).
+  async function fetchInChunks(cfgs: DevCfg[], size: number, token: string) {
+    const chunks: DevCfg[][] = [];
+    for (let i = 0; i < cfgs.length; i += size) chunks.push(cfgs.slice(i, i + size));
     const out: SensorPoint[] = [];
     let auth401 = false;
-    const settled = await Promise.allSettled(
-      chunks.map((c) => putChunk(c, token)),
-    );
+    const settled = await Promise.allSettled(chunks.map((c) => putChunk(c, token)));
     for (const r of settled) {
       if (r.status === "fulfilled") out.push(...r.value);
       else if ((r.reason as { code?: number })?.code === 401) auth401 = true;
     }
     return { out, auth401 };
+  }
+
+  // The IOsense query endpoint intermittently returns an EMPTY or PARTIAL payload
+  // for a chunk (server-side timeout under load) with an HTTP 200 — silently
+  // dropping whole sensors. Left unhandled this corrupts every multi-sensor card
+  // (e.g. a chiller IkW/TR computed from only the sensors that happened to
+  // survive → wrong value). So after the first pass we find pairs that came back
+  // with no series and retry them in progressively smaller chunks; small/single
+  // fetches are reliable, so a couple of rounds recovers the dropped sensors.
+  async function run(token: string) {
+    const got = new Map<string, SensorPoint>();
+    const absorb = (pts: SensorPoint[]) => {
+      for (const p of pts) {
+        const k = keyOf(p);
+        if (!got.has(k) || (!hasPoints(got.get(k)) && hasPoints(p))) got.set(k, p);
+      }
+    };
+    const first = await fetchInChunks(devConfig, CHUNK, token);
+    absorb(first.out);
+    let auth401 = first.auth401;
+
+    // Retry only the pairs that returned no series, shrinking the chunk each round.
+    for (const size of [8, 3]) {
+      const missing = devConfig.filter((d) => !got.has(keyOf(d)));
+      if (missing.length === 0) break;
+      const r = await fetchInChunks(missing, size, token);
+      absorb(r.out);
+      if (r.auth401) auth401 = true;
+    }
+    return { out: [...got.values()], auth401 };
   }
 
   let token = await getToken(ssoToken);

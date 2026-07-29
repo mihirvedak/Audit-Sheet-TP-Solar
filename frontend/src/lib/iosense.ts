@@ -305,32 +305,14 @@ export interface WindowCtx {
   trBase?: number;
 }
 
-// Bucket size (ms) for a periodicity label.
-function bucketMsFor(period?: string): number {
-  switch (period) {
-    case "15 Minutes":
-      return 15 * 60_000;
-    case "30 Minutes":
-      return 30 * 60_000;
-    case "Hourly":
-    case "Raw": // raw → hourly buckets for running-hours weighting
-      return 60 * 60_000;
-    case "Weekly":
-      return 7 * 24 * 60 * 60_000;
-    case "Monthly":
-      return 30 * 24 * 60 * 60_000;
-    case "Daily":
-    default:
-      return 24 * 60 * 60_000;
-  }
-}
-
 /**
  * Running-hours-weighted TR for one chiller (matches the reference dashboard):
  *   instantaneous TR = trBase × (avg inlet − avg outlet) / deltaDiv
- *   bucketed:  TRH = Σ (bucketTR × bucketRunningHours);  TR = TRH / Σ runningHours
+ *   daily buckets:  TRH = Σ (dayTR × dayRunningHours);  TR = TRH / Σ runningHours
  *   fallback (no running hours): the whole-window instantaneous TR.
- * Temperatures are averaged per bucket, THEN subtracted (never per-sample ΔT).
+ * TRH is bucketed at a FIXED DAILY resolution regardless of the display
+ * periodicity (so the value doesn't swing with the dropdown). Temperatures are
+ * averaged per day, THEN subtracted (never per-sample ΔT).
  * Returns the displayed TR, the whole-window ΔT, and total running hours.
  */
 function chillerTR(
@@ -339,6 +321,7 @@ function chillerTR(
   trBase: number,
   deltaDiv: number,
   ctx?: WindowCtx,
+  wholeWindowTrh = false,
 ): { tr: number | null; dt: number | null; runningHours: number; trh: number } {
   const inlet = samples(map.get(key(ch.supply.device, ch.supply.sensor)));
   const outlet = samples(map.get(key(ch.ret.device, ch.ret.sensor)));
@@ -358,8 +341,19 @@ function chillerTR(
   if (!ctx || status.length === 0)
     return { tr: instTR, dt, runningHours: 0, trh: 0 };
 
-  // Bucket the window; weight each bucket's TR by its running hours.
-  let bucketMs = bucketMsFor(ctx.period);
+  // Whole-window mode (CH_MOD_01): TR = base × (window-avg ΔT) / deltaDiv over the
+  // ENTIRE window (one average, SIGNED — a negative ΔT subtracts), and
+  // TRH = TR × total running hours. No bucketing.
+  if (wholeWindowTrh) {
+    const rh = runningHours(status, ctx.startMs, ctx.endMs, ctx.endMs);
+    return { tr: instTR, dt, runningHours: rh, trh: instTR != null ? instTR * rh : 0 };
+  }
+
+  // Default: TRH = Σ (bucketTR × bucketRunningHours), bucketed at a FIXED DAILY
+  // (24h) resolution — coarser than the downsampled data spacing so every bucket
+  // has temps to average, which keeps the value stable across the periodicity
+  // dropdown. TR = running-hours-weighted mean; temps averaged per day THEN subtracted.
+  let bucketMs = 24 * 60 * 60_000;
   const span = Math.max(1, ctx.endMs - ctx.startMs);
   if (span / bucketMs > 5000) bucketMs = span / 5000; // cap bucket count
   let trh = 0;
@@ -376,6 +370,18 @@ function chillerTR(
   }
   if (rhTotal > 0) return { tr: trh / rhTotal, dt, runningHours: rhTotal, trh };
   return { tr: instTR, dt, runningHours: 0, trh: 0 }; // fallback (never ran)
+}
+
+// Whether a chiller is running RIGHT NOW = its most recent status sample in the
+// window is "on" (≥ 0.5). Only currently-running chillers count toward Total TRH
+// (Total IkW/TR = Σ consumption over ALL chillers ÷ Σ TRH over running ones).
+// A chiller OFF now is excluded even if it accumulated TRH earlier in the window.
+// No status sensor / no samples → treated as not running.
+function isRunningNow(ch: ChillerTerm, map: Map<string, SensorPoint>): boolean {
+  if (!ch.status) return false;
+  const s = samples(map.get(key(ch.status.device, ch.status.sensor)));
+  if (s.length === 0) return false;
+  return s[s.length - 1].v >= 0.5; // samples() sorted ascending → last = latest
 }
 
 // Latest timestamp in the window (for the card footer).
@@ -458,7 +464,11 @@ export function computeFormulaValue(
     return (num / den).toFixed(3);
   }
   if (f.kind === "chillerRatio") {
-    // IkW/TR = Σ consumption (all chillers) ÷ Σ TRH (running chillers only).
+    // Total IkW/TR = Total Energy Consumption ÷ Total TRH, where:
+    //   Total Energy Consumption = Σ consumption over ALL chillers (running + OFF
+    //     — an OFF chiller still drew kWh earlier in the window), and
+    //   Total TRH = Σ TRH over ONLY currently-running chillers — UNLESS the card
+    //     opts into the legacy trhAllChillers mode (sum over every chiller).
     let totalCons = 0;
     let totalTRH = 0;
     let any = false;
@@ -468,8 +478,8 @@ export function computeFormulaValue(
       totalCons += ctx
         ? boundaryDelta(pp, ctx.startMs, ctx.endMs)
         : cumulativeDelta(pp);
-      const { trh } = chillerTR(ch, map, f.powerDiv, f.deltaDiv, ctx);
-      totalTRH += trh; // 0 for chillers that never ran → running-only sum
+      const { trh } = chillerTR(ch, map, f.powerDiv, f.deltaDiv, ctx, f.wholeWindowTrh);
+      if (f.trhAllChillers || isRunningNow(ch, map)) totalTRH += trh;
     }
     if (!any) return "NA"; // no chiller data at all
     if (totalTRH <= 0) return "NA"; // Total TRH = 0 → undefined
@@ -634,8 +644,10 @@ export function breakdownForCard(
     return rows;
   }
   if (card.formula?.kind === "chillerRatio") {
-    // One row per chiller: consumption (First), TRH (Last). Running chillers
-    // have TRH > 0; OFF chillers show TRH 0 (excluded from Total TRH).
+    // One row per chiller: consumption (First), TRH (Last). Consumption counts
+    // for every chiller; TRH counts only for CURRENTLY-running chillers, so a
+    // chiller OFF now shows TRH 0 — the rows sum to the card's Total TRH. Legacy
+    // trhAllChillers cards count every chiller's TRH (so no zeroing).
     const f = card.formula;
     return f.chillers.map((ch, i) => {
       const pp = map.get(key(ch.power.device, ch.power.sensor));
@@ -644,7 +656,8 @@ export function breakdownForCard(
           ? boundaryDelta(pp, ctx.startMs, ctx.endMs)
           : cumulativeDelta(pp)
         : null;
-      const { trh } = chillerTR(ch, map, f.powerDiv, f.deltaDiv, ctx);
+      const { trh } = chillerTR(ch, map, f.powerDiv, f.deltaDiv, ctx, f.wholeWindowTrh);
+      const counts = f.trhAllChillers || isRunningNow(ch, map);
       return {
         device: `Chiller ${i + 1}`,
         sensor: `${ch.power.device}·${ch.power.sensor}`,
@@ -652,7 +665,7 @@ export function breakdownForCard(
         firstTs: null,
         firstVal: cons, // consumption (kWh delta)
         lastTs: lastTsOf(pp),
-        lastVal: trh, // TRH (Ton-Refrigeration-Hours; 0 if not running)
+        lastVal: counts ? trh : 0, // TRH — 0 if excluded from Total TRH
         consumption: cons ?? 0,
         hasData: !!pp,
       };

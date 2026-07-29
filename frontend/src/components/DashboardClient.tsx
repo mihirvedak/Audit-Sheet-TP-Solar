@@ -20,20 +20,6 @@ import TimeRangePicker, {
 } from "./TimeRangePicker";
 import TrBaseInput, { TR_BASE_DEFAULT } from "./TrBaseInput";
 
-// Presets whose end is "now" — their window must keep advancing with the clock
-// so the data refreshes as real time moves forward.
-const LIVE_PRESETS = new Set([
-  "Today",
-  "Current Week",
-  "Previous 7 Days",
-  "Current Month",
-  "Previous 3 Months",
-  "Previous 12 Months",
-  "Current Year",
-]);
-// How often a now-anchored window re-extends to the current time (ms).
-const LIVE_REFRESH_MS = 30_000;
-
 export default function DashboardClient({ cards }: { cards: CardItem[] }) {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Category>("consumption");
@@ -212,19 +198,9 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
     };
   }, [cards, range, trBase]);
 
-  // Now-anchored presets (Today, Current Month, …) keep their end at the live
-  // clock: on each tick we recompute the range so its window — and therefore the
-  // fetched data — advances with real time (e.g. 3:01 → 3:09).
-  useEffect(() => {
-    const label = range.presetLabel;
-    if (!LIVE_PRESETS.has(label)) return;
-    const id = setInterval(() => {
-      const r = computeRange(label, new Date());
-      if (!r) return;
-      setRange((prev) => ({ ...prev, start: r.start, end: r.end }));
-    }, LIVE_REFRESH_MS);
-    return () => clearInterval(id);
-  }, [range.presetLabel]);
+  // No auto-refresh: the window is fixed at page load (its end is the load time)
+  // and only changes on an explicit user action — a preset/date/periodicity
+  // change, or a full page refresh. It does NOT advance with the wall clock.
 
   // Value shown on a card: each card pops in as its own fetch resolves. A card
   // not yet resolved shows "…" while loading, else NA.
