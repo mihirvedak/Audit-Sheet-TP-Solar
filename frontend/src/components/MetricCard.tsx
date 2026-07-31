@@ -432,7 +432,7 @@ export default function MetricCard({
     >
       <div className="flex items-start justify-between gap-2">
         <p
-          className="flex-1 text-sm font-medium leading-snug text-zinc-600 dark:text-zinc-300"
+          className="flex-1 text-sm font-normal leading-snug text-zinc-600 dark:text-zinc-300"
           title={card.label}
         >
           {highlightLabel(card.label, query)}
@@ -444,7 +444,7 @@ export default function MetricCard({
 
       <div className="mt-3 flex items-baseline gap-1.5">
         <span
-          className={`text-2xl font-semibold tracking-tight tabular-nums ${
+          className={`text-2xl font-light tracking-tight tabular-nums ${
             noData
               ? "text-zinc-300 dark:text-zinc-600"
               : "text-zinc-900 dark:text-zinc-50"
