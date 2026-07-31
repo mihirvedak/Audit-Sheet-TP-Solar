@@ -20,41 +20,83 @@ export interface SensorPoint {
 
 const key = (devID: string, sensor: string) => `${devID}:${sensor}`;
 
-// SSO token the portal appends to the dashboard URL. Different portals use
-// different param names and may put it in the query string OR the hash, so we
-// look broadly: a set of known names first, then ANY param whose key looks
-// token-ish. Passed to the server, which exchanges it (or uses it directly).
+// SSO token the portal hands the dashboard. Portals vary wildly: the token may
+// be in the URL query OR hash, under any param name, in the referrer (parent
+// launchpad URL), or delivered async via window.postMessage from the embedding
+// frame. We capture it from ALL of these. A value counts as a token if it's long
+// (≥40 chars) or a JWT (three dot-separated parts). Passed to the server, which
+// exchanges it (SSO token) or uses it directly (Bearer).
 const SSO_PARAM_NAMES = [
   "ssoToken", "token", "loginToken", "authToken", "accessToken",
   "access_token", "sso", "jwt", "auth", "iosense_auth_token", "tkn",
 ];
+const looksLikeToken = (v?: string | null): v is string =>
+  !!v && (v.length >= 40 || v.split(".").length === 3);
+
+// Token received via postMessage from the parent frame (eneruni/portal), if any.
+let messageToken: string | undefined;
+// Diagnostics from the last readSsoToken(), surfaced on-screen when auth fails so
+// we can see exactly what the embedding portal provided.
+export interface SsoDiag {
+  search: string;
+  hash: string;
+  referrer: string;
+  paramKeys: string[];
+  gotPostMessage: boolean;
+  tokenFound: boolean;
+  source?: string;
+}
+let ssoDiag: SsoDiag = {
+  search: "", hash: "", referrer: "", paramKeys: [], gotPostMessage: false, tokenFound: false,
+};
+export const getSsoDiag = (): SsoDiag => ssoDiag;
+
+if (typeof window !== "undefined") {
+  window.addEventListener("message", (e: MessageEvent) => {
+    try {
+      const d = e.data;
+      const cand =
+        typeof d === "string"
+          ? d
+          : d && (d.ssoToken || d.token || d.accessToken || d.access_token || d.jwt || d.auth);
+      if (looksLikeToken(cand)) messageToken = cand.trim();
+    } catch {
+      /* ignore */
+    }
+  });
+}
+
 function readSsoToken(): string | undefined {
   if (typeof window === "undefined") return undefined;
   const pick = (qs: string): string | undefined => {
     if (!qs) return undefined;
     const p = new URLSearchParams(qs.replace(/^[#?]/, ""));
     for (const n of SSO_PARAM_NAMES) {
-      const v = p.get(n);
-      // Only accept token-looking values (long / JWT), never short ids.
-      if (v && (v.length >= 40 || v.split(".").length === 3)) return v.trim();
+      if (looksLikeToken(p.get(n))) return p.get(n)!.trim();
     }
+    // Any param whose VALUE looks like a token (unknown param name).
+    for (const [, v] of p) if (looksLikeToken(v)) return v.trim();
     return undefined;
   };
   const { search, hash } = window.location;
-  const t = pick(search) || pick(hash);
+  const referrer = document.referrer || "";
+  const refQs = referrer.includes("?") ? referrer.slice(referrer.indexOf("?")) : "";
+
+  let source: string | undefined;
+  let t: string | undefined;
+  if ((t = pick(search))) source = "query";
+  else if ((t = pick(hash))) source = "hash";
+  else if ((t = pick(refQs))) source = "referrer";
+  else if (looksLikeToken(messageToken)) { t = messageToken; source = "postMessage"; }
+
+  const paramKeys: string[] = [];
+  try { paramKeys.push(...new URLSearchParams(search).keys()); } catch { /* */ }
+  try { paramKeys.push(...[...new URLSearchParams(hash.replace(/^#/, "")).keys()].map((k) => `#${k}`)); } catch { /* */ }
+  try { if (refQs) paramKeys.push(...[...new URLSearchParams(refQs.replace(/^\?/, "")).keys()].map((k) => `ref:${k}`)); } catch { /* */ }
+  ssoDiag = { search, hash, referrer, paramKeys, gotPostMessage: !!messageToken, tokenFound: !!t, source };
   if (!t) {
-    // Debug aid: list the param keys we DID see so the portal's actual param
-    // name is visible in the browser console.
-    try {
-      const keys = [
-        ...new URLSearchParams(search).keys(),
-        ...new URLSearchParams(hash.replace(/^#/, "")).keys(),
-      ];
-      // eslint-disable-next-line no-console
-      console.warn("[IOsense] no SSO token found in URL. Params seen:", keys);
-    } catch {
-      /* ignore */
-    }
+    // eslint-disable-next-line no-console
+    console.warn("[IOsense] no SSO token found.", ssoDiag);
   }
   return t;
 }

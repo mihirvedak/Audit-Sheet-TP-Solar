@@ -9,6 +9,7 @@ import {
   computeFormulaValue,
   computeLiveValue,
   fetchSensors,
+  getSsoDiag,
   pairsForCard,
   type SensorBreakdown,
   type SensorPoint,
@@ -269,6 +270,24 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
               )}
             </div>
           </div>
+
+          {/* SSO / auth diagnostic — shown whenever no SSO token was captured, so
+              we can see what the embedding portal actually provided (param names,
+              referrer, postMessage) even while data still loads via the static
+              token. Self-hides once an SSO token is found. Read this off-screen. */}
+          {!getSsoDiag().tokenFound &&
+            (() => {
+              const d = getSsoDiag();
+              return (
+                <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] leading-snug text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+                  <span className="font-semibold">Auth diagnostic</span> · token
+                  found: <b>{d.tokenFound ? `yes (${d.source})` : "no"}</b> ·
+                  URL params: <b>[{d.paramKeys.join(", ") || "none"}]</b> ·
+                  postMessage token: <b>{d.gotPostMessage ? "yes" : "no"}</b> ·
+                  referrer: <b>{d.referrer || "none"}</b>
+                </div>
+              );
+            })()}
 
           {/* Controls row */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
