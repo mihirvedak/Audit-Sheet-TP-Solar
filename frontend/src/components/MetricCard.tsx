@@ -424,10 +424,10 @@ export default function MetricCard({
   return (
     <div
       id={card.id}
-      className={`group flex scroll-mt-28 flex-col justify-between rounded-xl border bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:bg-zinc-900/60 ${
+      className={`group flex scroll-mt-28 flex-col justify-between rounded-xl border-2 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:bg-zinc-900/60 ${
         matched
-          ? "border-indigo-400 ring-2 ring-indigo-400 dark:border-indigo-500 dark:ring-indigo-500/50"
-          : "border-zinc-300 hover:border-zinc-400 dark:border-zinc-700 dark:hover:border-zinc-600"
+          ? "border-indigo-500 ring-2 ring-indigo-400 dark:border-indigo-400 dark:ring-indigo-500/50"
+          : "border-indigo-200 hover:border-indigo-300 dark:border-indigo-800/50 dark:hover:border-indigo-700"
       } ${dimmed ? "opacity-40" : ""}`}
     >
       <div className="flex items-start justify-between gap-2">
