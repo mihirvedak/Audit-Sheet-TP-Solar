@@ -271,11 +271,11 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
             </div>
           </div>
 
-          {/* SSO / auth diagnostic — shown whenever no SSO token was captured, so
-              we can see what the embedding portal actually provided (param names,
-              referrer, postMessage) even while data still loads via the static
-              token. Self-hides once an SSO token is found. Read this off-screen. */}
-          {!getSsoDiag().tokenFound &&
+          {/* SSO / auth diagnostic — shown ONLY when the data fetch actually
+              fails (real auth problem). The client not finding a URL token is
+              normal here (the server authenticates via IOSENSE_TOKEN), so we do
+              NOT alarm the user with this banner while data loads fine. */}
+          {fetchState === "error" &&
             (() => {
               const d = getSsoDiag();
               return (
