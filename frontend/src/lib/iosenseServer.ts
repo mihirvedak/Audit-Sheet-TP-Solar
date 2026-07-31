@@ -164,27 +164,40 @@ async function resolveProvided(token: string): Promise<string> {
 }
 
 async function getToken(ssoToken?: string, force = false): Promise<string> {
+  // 1. A FRESH SSO token from the portal URL is the primary, self-healing source.
+  //    Exchange it for a Bearer so the dashboard authenticates automatically on
+  //    open — even if a previously stored/static token has since expired. One-time
+  //    SSO tokens are consumed on first exchange, so only exchange one we haven't
+  //    already exchanged this session (ssoToken !== lastSso); later calls in the
+  //    same session reuse the cached Bearer (step 2). If the exchange fails (token
+  //    already consumed / expired), fall through to the other sources.
+  if (ssoToken && ssoToken !== lastSso) {
+    try {
+      const t = await resolveProvided(ssoToken); // sets cachedToken + persists
+      lastSso = ssoToken;
+      return t;
+    } catch {
+      /* fall through */
+    }
+  }
+
+  // On a forced refresh (after a 401) drop the token that just failed.
+  if (force) cachedToken = null;
+
+  // 2. Within an active SSO session, reuse the Bearer we exchanged for it (keeps
+  //    a portal session consistent and independent of any static token).
+  if (!force && ssoToken && ssoToken === lastSso && cachedToken) return cachedToken;
+
+  // 3. Static env token (IOSENSE_TOKEN) — the source of truth for direct,
+  //    non-portal opens.
   if (STATIC_TOKEN) return STATIC_TOKEN;
 
-  if (ssoToken && ssoToken !== lastSso) {
-    const t = await resolveProvided(ssoToken);
-    lastSso = ssoToken;
-    return t;
-  }
-
-  if (!force) {
-    if (!cachedToken) cachedToken = loadPersistedToken();
-    if (cachedToken) return cachedToken;
-  }
-
-  if (ssoToken) {
-    const t = await resolveProvided(ssoToken);
-    lastSso = ssoToken;
-    return t;
-  }
+  // 4. Any previously-exchanged Bearer (memory, then disk).
+  if (!cachedToken) cachedToken = loadPersistedToken();
+  if (cachedToken) return cachedToken;
 
   throw new Error(
-    "No IOsense SSO token. Open the dashboard via the IOsense portal (…?ssoToken=…) or set IOSENSE_TOKEN.",
+    "No IOsense token. Open the dashboard via the IOsense portal (…?ssoToken=…) or set IOSENSE_TOKEN.",
   );
 }
 
