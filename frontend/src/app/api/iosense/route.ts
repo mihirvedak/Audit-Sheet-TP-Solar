@@ -3,7 +3,8 @@ import { fetchLastDPs, fetchSensorsServer } from "@/lib/iosenseServer";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// POST { pairs: [{devID, sensor}], sTime, eTime } → { data: SensorPoint[] }
+// POST { pairs: [{devID, sensor}], sTime, eTime } → { data: SensorPoint[], lastDPs }
+// POST { pairs, latest: true }                   → { lastDPs } (live cards; no window)
 // Auth (login + token) happens server-side; the browser never sees a token.
 export async function POST(req: Request) {
   try {
@@ -12,8 +13,13 @@ export async function POST(req: Request) {
       sTime?: number;
       eTime?: number;
       ssoToken?: string;
+      latest?: boolean;
     };
-    const { pairs, sTime, eTime, ssoToken } = body;
+    const { pairs, sTime, eTime, ssoToken, latest } = body;
+    if (latest && Array.isArray(pairs) && pairs.length > 0) {
+      // Strict: an auth failure becomes a 401 below instead of an empty list.
+      return Response.json({ lastDPs: await fetchLastDPs(pairs, ssoToken, true) });
+    }
     if (!Array.isArray(pairs) || pairs.length === 0 || !sTime || !eTime) {
       return Response.json({ error: "bad request" }, { status: 400 });
     }

@@ -9,6 +9,49 @@ the fetch method used.
 - Production normalisers (`*_PRODUCTION_A1`) are used as the divisor for SEC-type
   cards: `value = Σ(consumption sensors) / production`.
 
+## Live Data cards — latest data point (not windowed)
+- Endpoint: `PUT /account/deviceData/getLastDPsofDevicesAndSensorProcessed`
+  body `{ devices: [{ devID, sensor }] }` → `{ devID, sensor, time, value, unit }`
+  per pair. A sensor that never reported returns `time`/`value` = `"N/A"` (dropped).
+- Called via `POST /api/iosense { pairs, latest: true }` (`fetchLatest` in
+  [`iosense.ts`](frontend/src/lib/iosense.ts)); polled every **60 s** and
+  independent of the Duration picker. Auth failures return **401** (not empty data).
+- Freshness rule (`liveReading`, `LIVE_FRESH_MS`): a reading **≤ 1 hour old** is
+  fresh. If a sensor has no fresh reading the card gets a **red border** and
+  still shows the **last reading received** with its timestamp (`NA` only if the
+  sensor never reported). Multi-sensor cards (average / scalePct) use the fresh
+  sensors when any exist, else the last readings of all sensors.
+- This endpoint does **not** count toward the device rate limit below (verified
+  2026-09-28: 5 × 24-device calls, windowed call still accepted).
+- **PGS Live tab** (rows 166–232) uses the same endpoint, configured by label in
+  `PGS_LIVE_CONFIGS` ([`liveConfigs.ts`](frontend/src/lib/liveConfigs.ts)):
+  47 cards on devices `TPSGCPGS_A1…A9` (SIL→A3, NH3→A1, NO2→A2, TMA→A8,
+  CH4→A4, H2→A5, PH3→A6, AR→A7, BCL3→A9). Units follow the sheet row-for-row
+  (`PGS_LIVE_UNIT` in dashboardData.ts): **psi** by default, **Online/Standby**
+  on 21 cards, **bar** on CH4_P2_STS/IN. Pump-status cards have no sensor in the sheet → NA, except
+  `TMA_P2_STS` = A8·D3 (same pair as `TMA_P2_IN`). `NO2_P2_STS` (D3) and
+  `NO2_P3_STS` (D4) list a sensor but no device → left unconfigured.
+- **PGS Consumption tab** (rows 233–247) is windowed (`getAutoDownSampledData`),
+  configured by label in `PGS_CONSUMPTION_CONFIGS`
+  ([`cardConfigs.ts`](frontend/src/lib/cardConfigs.ts)), `op: "latest"` = latest
+  weight in the window: TMA_WT_01/02 = A8·D2/D5, BCL3_WT_01–04 = A9·D2–D5 (kg).
+  The 9 `*_CONS_01` cards have no sensor yet → NA. Units kg, PH3/AR_CONS_01 m³.
+
+## IOsense device rate limit (windowed data)
+- `getAutoDownSampledData` allows **100 devices per 30-second window** per
+  account. Over the limit it answers **HTTP 200** with `success: false` and
+  `"Device rate limit exceeded … Retry after N seconds"` — i.e. empty data.
+- The consumption tab needs **253 pairs / 189 devices**, so a single page load
+  cannot fetch them all within one window; rejected chunks show as `NA`.
+- **Fixed 2026-10-01** (`iosenseServer.ts`): every chunk passes a server-wide
+  budget of **90 devices / 30 s** (`acquireDevices`); a rate-limit refusal still
+  slipping through waits the advised "Retry after N" and retries (≤ 4×). A full
+  consumption load now completes in ~70 s instead of leaving most cards NA.
+- **Token order:** `IOSENSE_TOKEN` (.env) is tried first; once it 401s it is
+  marked dead and the portal-exchanged Bearer in `frontend/.iosense-auth-token`
+  is used. Shrinking retries are skipped on a 401 so a dead token doesn't burn
+  the rate budget.
+
 ## Configured cards
 Config lives in [`frontend/src/lib/cardConfigs.ts`](frontend/src/lib/cardConfigs.ts),
 keyed by sheet row.

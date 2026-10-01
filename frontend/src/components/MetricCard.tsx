@@ -74,12 +74,21 @@ function calcSummary(
   const live = card.liveConfig;
   if (live) {
     if (live.op === "constant") return `Fixed value = ${value}${u}`;
+    const fresh = rows.filter((r) => !r.stale).length;
+    if (!rows.some((r) => r.hasData)) return "No reading ever received from this sensor.";
+    if (fresh === 0)
+      return `No data in the last 1 hour — showing the last reading received = ${value}${u}`;
+    // Multi-sensor cards with a silent sensor are computed from the fresh ones.
+    const used =
+      fresh < rows.length ? ` (${fresh} of ${rows.length} sensors — others silent > 1 h)` : "";
     if (live.op === "latest") return `Latest reading = ${value}${u}`;
     if (live.op === "average")
-      return `Average of ${rows.length} sensor${rows.length === 1 ? "" : "s"} (last values) = ${value}${u}`;
+      return `Average of ${fresh} sensor${fresh === 1 ? "" : "s"} (latest readings) = ${value}${u}${used}`;
     if (live.op === "scalePct")
-      return `(average of last values ÷ 6.5) × 100 = ${value}${u}`;
+      return `(average of latest readings ÷ 6.5) × 100 = ${value}${u}${used}`;
   }
+  if (card.config?.op === "latest")
+    return `Latest reading in the selected window = ${value}${u}`;
   // Consumption cards: Σ numerator ÷ production / denominator, or plain Σ.
   const sum = (role: SensorBreakdown["role"]) =>
     rows.filter((r) => r.role === role).reduce((a, r) => a + r.consumption, 0);
@@ -264,6 +273,7 @@ function InfoButton({
               </table>
             ) : card.liveConfig ? (
               // Live cards: raw latest reading + its timestamp per sensor.
+              <>
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="text-left text-[10px] uppercase tracking-wide text-zinc-400">
@@ -283,8 +293,14 @@ function InfoButton({
                           {r.device}
                           <span className="text-zinc-400">·{r.sensor}</span>
                         </span>
-                        {!r.hasData && (
+                        {!r.hasData ? (
                           <span className="ml-1 text-[10px] text-rose-500">no data</span>
+                        ) : (
+                          r.stale && (
+                            <span className="ml-1 text-[10px] text-red-500">
+                              no data in last 1 h
+                            </span>
+                          )
                         )}
                       </td>
                       <td className="py-1 px-1 text-right font-semibold tabular-nums text-indigo-600 dark:text-indigo-300">
@@ -297,6 +313,12 @@ function InfoButton({
                   ))}
                 </tbody>
               </table>
+              <div className="mt-1 text-[9px] leading-snug text-zinc-400">
+                Each sensor&apos;s latest data point. A red border means a sensor
+                has sent no data in the last 1 hour; the card then shows the
+                last reading received.
+              </div>
+              </>
             ) : (
               <>
               <table className="w-full border-collapse">
@@ -396,6 +418,7 @@ export default function MetricCard({
   value,
   breakdown,
   lastTs = null,
+  stale = false,
   trBase = TR_BASE_DEFAULT,
   query = "",
   matched = false,
@@ -408,6 +431,8 @@ export default function MetricCard({
   breakdown?: SensorBreakdown[];
   /** ISO timestamp of the most recent reading across the card's sensors. */
   lastTs?: string | null;
+  /** Live cards: a sensor has sent no data in the last hour → highlighted. */
+  stale?: boolean;
   /** Global TR Base coefficient (for chiller formula tooltips). */
   trBase?: number;
   /** Active search query — matched text in the label is highlighted. */
@@ -424,11 +449,17 @@ export default function MetricCard({
   return (
     <div
       id={card.id}
+      data-stale={stale || undefined}
       className={`group flex scroll-mt-28 flex-col justify-between rounded-xl border-2 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:bg-zinc-900/60 ${
-        matched
-          ? "border-indigo-500 ring-2 ring-indigo-400 dark:border-indigo-400 dark:ring-indigo-500/50"
-          : "border-indigo-200 hover:border-indigo-300 dark:border-indigo-800/50 dark:hover:border-indigo-700"
-      } ${dimmed ? "opacity-40" : ""}`}
+        // A stale live card keeps its red border even while search-matched.
+        stale
+          ? "border-red-500 dark:border-red-500/80"
+          : matched
+            ? "border-indigo-500 dark:border-indigo-400"
+            : "border-indigo-200 hover:border-indigo-300 dark:border-indigo-800/50 dark:hover:border-indigo-700"
+      } ${matched ? "ring-2 ring-indigo-400 dark:ring-indigo-500/50" : ""} ${
+        dimmed ? "opacity-40" : ""
+      }`}
     >
       <div className="flex items-start justify-between gap-2">
         <p
@@ -461,7 +492,13 @@ export default function MetricCard({
 
       <div
         className="mt-3 flex items-center justify-between gap-2 border-t border-zinc-100 pt-2 dark:border-zinc-800"
-        title={lastSeen ? `Last reading received: ${lastSeen.abs} (${lastSeen.ago})` : "Last reading received"}
+        title={
+          lastSeen
+            ? `Last reading received: ${lastSeen.abs} (${lastSeen.ago})${
+                stale ? " — no data in the last 1 hour" : ""
+              }`
+            : "Last reading received"
+        }
       >
         <span className="flex items-center gap-1 text-[11px] tabular-nums text-zinc-500 dark:text-zinc-400">
           <svg

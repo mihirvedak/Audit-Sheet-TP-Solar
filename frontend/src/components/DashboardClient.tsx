@@ -7,9 +7,12 @@ import {
   breakdownForCard,
   computeCardValue,
   computeFormulaValue,
-  computeLiveValue,
+  fetchLatest,
   fetchSensors,
+  liveReading,
   pairsForCard,
+  type LastDPMap,
+  type LiveReading,
   type SensorBreakdown,
   type SensorPoint,
 } from "@/lib/iosense";
@@ -20,15 +23,39 @@ import TimeRangePicker, {
 } from "./TimeRangePicker";
 import TrBaseInput, { TR_BASE_DEFAULT } from "./TrBaseInput";
 
+// How often live cards re-read each sensor's latest data point (ms).
+const LIVE_POLL_MS = 60_000;
+
+// Unique device/sensor pairs across a set of cards (for one batched call).
+function uniquePairs(list: CardItem[]): { devID: string; sensor: string }[] {
+  const seen = new Set<string>();
+  const pairs: { devID: string; sensor: string }[] = [];
+  for (const c of list) {
+    for (const p of pairsForCard(c)) {
+      const k = `${p.devID}:${p.sensor}`;
+      if (!seen.has(k)) {
+        seen.add(k);
+        pairs.push(p);
+      }
+    }
+  }
+  return pairs;
+}
+
 export default function DashboardClient({ cards }: { cards: CardItem[] }) {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Category>("consumption");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const counts = useMemo(() => {
-    let consumption = 0;
-    for (const c of cards) if (c.category === "consumption") consumption++;
-    return { consumption, live: cards.length - consumption };
+    const n: Record<Category, number> = {
+      consumption: 0,
+      live: 0,
+      pgsLive: 0,
+      pgsConsumption: 0,
+    };
+    for (const c of cards) n[c.category]++;
+    return n;
   }, [cards]);
 
   // Cards shown for the active tab.
@@ -95,7 +122,8 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
   const prevWindowRef = useRef<string>("");
 
   useEffect(() => {
-    const configured = cards.filter((c) => c.config || c.liveConfig || c.formula);
+    // Live cards are NOT windowed — they read latest data points (see below).
+    const configured = cards.filter((c) => c.config || c.formula);
     if (configured.length === 0) return;
 
     let cancelled = false;
@@ -113,26 +141,11 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
     const fetchStart = sTime - BOUNDARY_SNAP_MS;
     const fetchEnd = eTime + BOUNDARY_SNAP_MS;
 
-    // Compute a card's value from the fetched map (consumption / formula / live).
+    // Compute a card's value from the fetched map (consumption / formula).
     const valueOf = (c: CardItem, map: Map<string, SensorPoint>) =>
-      c.config
-        ? computeCardValue(c, map, ctx)
-        : c.formula
-          ? computeFormulaValue(c, map, ctx)
-          : computeLiveValue(c, map);
+      c.config ? computeCardValue(c, map, ctx) : computeFormulaValue(c, map, ctx);
 
-    // Unique device/sensor pairs across all configured cards (one batched call).
-    const seen = new Set<string>();
-    const pairs: { devID: string; sensor: string }[] = [];
-    for (const c of configured) {
-      for (const p of pairsForCard(c)) {
-        const k = `${p.devID}:${p.sensor}`;
-        if (!seen.has(k)) {
-          seen.add(k);
-          pairs.push(p);
-        }
-      }
-    }
+    const pairs = uniquePairs(configured);
 
     // Fresh window → clear values so resolved cards repopulate (others show "…").
     // But a now-anchored tick (same preset/start/periodicity, only the end moved
@@ -202,10 +215,67 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
   // and only changes on an explicit user action — a preset/date/periodicity
   // change, or a full page refresh. It does NOT advance with the wall clock.
 
+  // Live cards show each sensor's LATEST reading, independent of the Duration
+  // window, re-read every minute (and when the tab becomes visible again). A
+  // reading older than 1 hour is not shown; the card is highlighted instead.
+  const liveCards = useMemo(() => cards.filter((c) => c.liveConfig), [cards]);
+  const [lastDPs, setLastDPs] = useState<LastDPMap | null>(null);
+  const [liveError, setLiveError] = useState("");
+  // Clock the 1-hour freshness is judged against (advanced on every poll).
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const pairs = uniquePairs(liveCards);
+    if (pairs.length === 0) return;
+    let cancelled = false;
+    const load = async () => {
+      if (document.hidden) return; // resumes via visibilitychange
+      const { lastDPs: dps, error } = await fetchLatest(pairs);
+      if (cancelled) return;
+      setNowMs(Date.now());
+      setLiveError(error ?? "");
+      // On a failed poll keep the previous readings; they age out to "stale"
+      // against the advancing clock rather than vanishing.
+      if (!error) setLastDPs(dps);
+    };
+    const onVisible = () => {
+      if (!document.hidden) load();
+    };
+    load();
+    const id = setInterval(load, LIVE_POLL_MS);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [liveCards]);
+
+  const liveReadings = useMemo(() => {
+    const m = new Map<string, LiveReading>();
+    for (const c of liveCards) {
+      // Constants need no data; sensor cards wait for the first poll.
+      if (lastDPs || c.liveConfig?.op === "constant")
+        m.set(c.id, liveReading(c, lastDPs ?? new Map(), nowMs));
+    }
+    return m;
+  }, [liveCards, lastDPs, nowMs]);
+
+  const staleCount = useMemo(() => {
+    let n = 0;
+    for (const c of tabCards) if (liveReadings.get(c.id)?.stale) n++;
+    return n;
+  }, [tabCards, liveReadings]);
+
   // Value shown on a card: each card pops in as its own fetch resolves. A card
   // not yet resolved shows "…" while loading, else NA.
   function valueFor(card: CardItem): string {
-    if (!card.config && !card.liveConfig && !card.formula) return "NA";
+    if (card.liveConfig) {
+      const r = liveReadings.get(card.id);
+      if (r) return r.value;
+      return liveError ? "NA" : "…";
+    }
+    if (!card.config && !card.formula) return "NA";
     const v = liveValues.get(card.id);
     if (v !== undefined) return v;
     return fetchState === "loading" ? "…" : "NA";
@@ -214,6 +284,7 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
   // Most recent timestamp across all of a card's sensors (the latest device
   // data received), used for the card's "last received" footer.
   function lastTsFor(card: CardItem): string | null {
+    if (card.liveConfig) return liveReadings.get(card.id)?.ts ?? null;
     const bd = breakdowns.get(card.id);
     if (!bd) return null;
     let max: string | null = null;
@@ -254,12 +325,20 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
                   ? `${matchIds.size} match${matchIds.size === 1 ? "" : "es"}`
                   : `${tabCards.length} cards`}
               </span>
-              {fetchState === "error" ? (
+              {staleCount > 0 && (
+                <span
+                  className="rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 dark:bg-red-500/15 dark:text-red-300"
+                  title="Cards whose sensor has sent no data in the last 1 hour"
+                >
+                  {`${staleCount} no data > 1 h`}
+                </span>
+              )}
+              {fetchState === "error" || liveError ? (
                 <span
                   className="rounded-full bg-rose-50 px-3 py-1 text-xs font-medium text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
-                  title={errorMsg}
+                  title={errorMsg || liveError}
                 >
-                  Data error{errorMsg ? `: ${errorMsg}` : ""}
+                  Data error{errorMsg || liveError ? `: ${errorMsg || liveError}` : ""}
                 </span>
               ) : (
                 <span className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
@@ -321,19 +400,23 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
             <TimeRangePicker value={range} onApply={setRange} />
           </div>
 
-          {/* Tabs */}
-          <div className="mt-3 flex gap-1 border-b border-zinc-200 dark:border-zinc-800">
+          {/* Tabs — scroll sideways on narrow screens instead of widening the
+              page. The baseline is an inset shadow (not a border) so the active
+              tab's underline covers it without overflowing the scroller. */}
+          <div className="mt-3 flex gap-1 overflow-x-auto shadow-[inset_0_-1px_0_var(--color-zinc-200)] dark:shadow-[inset_0_-1px_0_var(--color-zinc-800)]">
             {(
               [
                 { id: "consumption", label: "Consumption", n: counts.consumption },
                 { id: "live", label: "Live Data", n: counts.live },
+                { id: "pgsLive", label: "PGS Live", n: counts.pgsLive },
+                { id: "pgsConsumption", label: "PGS Consumption", n: counts.pgsConsumption },
               ] as { id: Category; label: string; n: number }[]
             ).map((t) => (
               <button
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
-                className={`-mb-px flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition ${
+                className={`flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition ${
                   tab === t.id
                     ? "border-indigo-500 text-indigo-600 dark:border-indigo-400 dark:text-indigo-300"
                     : "border-transparent text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
@@ -363,14 +446,24 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
             No cards match <span className="font-semibold">“{query}”</span>.
           </div>
         )}
+        {tabCards.some((c) => c.liveConfig) && (
+          <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+            Live cards show each sensor&apos;s latest reading (refreshed every
+            minute; the Duration picker does not apply). A red border means no
+            data in the last 1 hour — the card shows the last reading received.
+          </p>
+        )}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
           {tabCards.map((c) => (
             <MetricCard
               key={c.id}
               card={c}
               value={valueFor(c)}
-              breakdown={breakdowns.get(c.id)}
+              breakdown={
+                c.liveConfig ? liveReadings.get(c.id)?.rows : breakdowns.get(c.id)
+              }
               lastTs={lastTsFor(c)}
+              stale={liveReadings.get(c.id)?.stale ?? false}
               trBase={trBase}
               query={query}
               matched={matchIds.has(c.id)}

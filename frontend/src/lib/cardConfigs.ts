@@ -731,3 +731,21 @@ export const CARD_CONFIGS: Record<number, CardConfig> = {
   165: { metric: "consumption", method: "getAutoSampled",
     numerator: terms(["TPSGHTCSS_C1(D405)", "TPSGHTCSS_C1(D473)"]), divisor: term(MODULE) },
 };
+
+// PGS Consumption tab — keyed by card LABEL (PGS cards are numbered after the
+// sheet rows). Gas-cylinder scale weights (kg): each card shows the latest
+// weight in the selected window. *_CONS_01 cards have no sensor yet → NA.
+const pgsWeight = (token: string): CardConfig => ({
+  metric: "consumption",
+  method: "getAutoSampled",
+  op: "latest",
+  numerator: [term(token)],
+});
+export const PGS_CONSUMPTION_CONFIGS: Record<string, CardConfig> = {
+  TMA_WT_01: pgsWeight("TPSGCPGS_A8(D2)"),
+  TMA_WT_02: pgsWeight("TPSGCPGS_A8(D5)"),
+  BCL3_WT_01: pgsWeight("TPSGCPGS_A9(D2)"),
+  BCL3_WT_02: pgsWeight("TPSGCPGS_A9(D3)"),
+  BCL3_WT_03: pgsWeight("TPSGCPGS_A9(D4)"),
+  BCL3_WT_04: pgsWeight("TPSGCPGS_A9(D5)"),
+};

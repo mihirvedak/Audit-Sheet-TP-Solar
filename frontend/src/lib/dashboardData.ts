@@ -8,15 +8,16 @@
 import {
   CARD_CONFIGS,
   FORMULA_CONFIGS,
+  PGS_CONSUMPTION_CONFIGS,
   type CardConfig,
   type FormulaConfig,
 } from "./cardConfigs";
-import { LIVE_CONFIGS, type LiveConfig } from "./liveConfigs";
+import { LIVE_CONFIGS, PGS_LIVE_CONFIGS, type LiveConfig } from "./liveConfigs";
 
 export type CardKind = "value" | "status";
 export type Health = "ok" | "warn" | "alert";
 export type Tone = "yellow" | "green";
-export type Category = "consumption" | "live";
+export type Category = "consumption" | "live" | "pgsLive" | "pgsConsumption";
 
 export interface CardItem {
   id: string;
@@ -206,6 +207,51 @@ const RAW: string[] = [
   "Prod Phase 1",
   "Prod Phase 2",
 ];
+
+/* ------------------------------------------------------------------ */
+/* PGS (process gas) tabs                                              */
+/* ------------------------------------------------------------------ */
+
+// Numbered AFTER the sheet rows (row = RAW.length + 1 …) so every existing row —
+// and its row-keyed config — stays unchanged. No sensors are mapped yet, so
+// these cards show NA until a config is added for their row. Live sensors come
+// from PGS_LIVE_CONFIGS (keyed by label).
+const PGS_LIVE: string[] = [
+  "SIL_P1_STS", "SIL_P1_IN", "SIL_P1_OUT", "SIL_P2_STS", "SIL_P2_IN", "SIL_P2_OUT", "SIL_P3_STS", "SIL_P3_IN", "SIL_P3_OUT",
+  "NH3_P1_STS", "NH3_P1_IN", "NH3_P1_OUT", "NH3_P2_STS", "NH3_P2_IN", "NH3_P2_OUT", "NH3_P3_STS", "NH3_P3_IN", "NH3_P3_OUT",
+  "NO2_P1_STS", "NO2_P1_IN", "NO2_P1_OUT", "NO2_P2_STS", "NO2_P2_IN", "NO2_P2_OUT", "NO2_P3_STS", "NO2_P3_IN", "NO2_P3_OUT",
+  "TMA_P1_STS", "TMA_P1_IN", "TMA_P1_OUT", "TMA_P2_STS", "TMA_P2_IN", "TMA_P2_OUT",
+  "CH4_P1_STS", "CH4_P1_IN", "CH4_P1_OUT", "CH4_P2_STS", "CH4_P2_IN", "CH4_P2_OUT",
+  "H2_P1_STS", "H2_P1_IN", "H2_P1_OUT", "H2_P2_STS", "H2_P2_IN", "H2_P2_OUT",
+  "PH3_P1_STS", "PH3_P1_IN1", "PH3_P1_IN2", "PH3_P1_OUT", "PH3_P2_STS", "PH3_P2_IN1", "PH3_P2_IN2", "PH3_P2_OUT",
+  "AR_P1_STS", "AR_P1_IN1", "AR_P1_IN2", "AR_P1_OUT", "AR_P2_STS", "AR_P2_IN1", "AR_P2_IN2", "AR_P2_OUT",
+  "BCL3_P1_STS", "BCL3_P1_IN", "BCL3_P1_OUT", "BCL3_P2_STS", "BCL3_P2_IN", "BCL3_P2_OUT",
+];
+
+// PGS Live display units, per row of the PGS config sheet: psi by default,
+// with the sheet's "Online/Standby" and "bar" rows listed explicitly.
+const PGS_ONLINE_STANDBY = [
+  "SIL_P1_OUT", "SIL_P2_OUT", "SIL_P3_OUT", "NH3_P1_OUT", "NH3_P2_OUT", "NH3_P3_OUT",
+  "NO2_P1_OUT", "NO2_P2_OUT", "NO2_P3_OUT", "TMA_P1_OUT", "TMA_P2_OUT",
+  "CH4_P1_OUT", "CH4_P2_OUT", "H2_P1_OUT", "H2_P2_OUT",
+  "PH3_P1_IN2", "PH3_P2_IN1", "AR_P1_IN1", "AR_P2_IN1", "BCL3_P1_IN", "BCL3_P2_OUT",
+];
+const PGS_LIVE_UNIT: Record<string, string> = {
+  ...Object.fromEntries(PGS_ONLINE_STANDBY.map((l) => [l, "Online/Standby"])),
+  CH4_P2_STS: "bar",
+  CH4_P2_IN: "bar",
+};
+function pgsLiveUnit(label: string): string {
+  return PGS_LIVE_UNIT[label] ?? "psi";
+}
+
+const PGS_CONSUMPTION: string[] = [
+  "NH3_CONS_01", "N2O_CONS_01", "TMA_CONS_01", "CH4_CONS_01", "H2_CONS_01", "PH3_CONS_01", "BCL3_CONS_01",
+  "TMA_WT_01", "TMA_WT_02", "BCL3_WT_01", "BCL3_WT_02", "BCL3_WT_03", "BCL3_WT_04", "SIL_CONS_01", "AR_CONS_01",
+];
+
+// PGS Consumption display units (per config sheet): kg, except PH3/AR in m³.
+const PGS_CONSUMPTION_UNIT: Record<string, string> = { PH3_CONS_01: "m³", AR_CONS_01: "m³" };
 
 /* ------------------------------------------------------------------ */
 /* Tab categorisation (by tag pattern)                                 */
@@ -430,12 +476,22 @@ function healthFromSeed(seed: number, kind: CardKind, value: string): Health {
   return "ok";
 }
 
-function makeCard(row: number, label: string): CardItem {
+function makeCard(
+  row: number,
+  label: string,
+  category: Category = categoryFor(label),
+): CardItem {
   const id = `row-${String(row).padStart(3, "0")}`;
   const { kind } = classify(label);
-  const u = UNIT_BY_ROW[row]; // explicit display unit ("" = none)
+  // explicit display unit ("" = none)
+  const u =
+    category === "pgsLive"
+      ? pgsLiveUnit(label)
+      : category === "pgsConsumption"
+        ? (PGS_CONSUMPTION_UNIT[label] ?? "kg")
+        : UNIT_BY_ROW[row];
   const unit = kind === "status" || !u ? undefined : u;
-  return { id, row, label, unit, kind, category: categoryFor(label) };
+  return { id, row, label, unit, kind, category };
 }
 
 // Reading for a non-configured card within a time window. Values are generated
@@ -487,11 +543,18 @@ const REMOVED_ROWS: ReadonlySet<number> = new Set(
 );
 
 function build(): CardItem[] {
-  return RAW.map((label, i) => {
+  const entries: { label: string; category?: Category }[] = [
+    ...RAW.map((label) => ({ label })),
+    ...PGS_LIVE.map((label) => ({ label, category: "pgsLive" as const })),
+    ...PGS_CONSUMPTION.map((label) => ({ label, category: "pgsConsumption" as const })),
+  ];
+  return entries.map(({ label, category }, i) => {
     const row = i + 1;
-    const c = makeCard(row, label);
-    const config = CARD_CONFIGS[row];
-    const liveConfig = LIVE_CONFIGS[row];
+    const c = makeCard(row, label, category);
+    const config =
+      category === "pgsConsumption" ? PGS_CONSUMPTION_CONFIGS[label] : CARD_CONFIGS[row];
+    const liveConfig =
+      category === "pgsLive" ? PGS_LIVE_CONFIGS[label] : LIVE_CONFIGS[row];
     const formula = FORMULA_CONFIGS[row];
     return {
       ...c,

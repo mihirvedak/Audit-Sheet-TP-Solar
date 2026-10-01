@@ -105,10 +105,15 @@ function computeDownscale(sTime: number, eTime: number): number {
 }
 
 let cachedToken: string | null = null;
+// Set once IOSENSE_TOKEN is rejected (expired) — later requests skip straight to
+// the portal-exchanged Bearer instead of paying a failed round-trip each time.
+let staticDead = false;
 // The last SSO token we successfully exchanged — lets us refresh on each new
 // dashboard open (new token) without re-consuming the same one-time token
 // during a single session (window changes reuse the cached Bearer).
 let lastSso: string | null = null;
+// SSO exchanges in progress, keyed by SSO token (see getToken).
+const inflightSso = new Map<string, Promise<string>>();
 
 // Exchange a one-time SSO token (from the portal URL, ~60s lifetime) for a
 // real Bearer token, per the IOsense SDK flow.
@@ -163,7 +168,7 @@ async function resolveProvided(token: string): Promise<string> {
   }
 }
 
-async function getToken(ssoToken?: string, force = false): Promise<string> {
+async function getToken(ssoToken?: string, failed?: string): Promise<string> {
   // 1. A FRESH SSO token from the portal URL is the primary, self-healing source.
   //    Exchange it for a Bearer so the dashboard authenticates automatically on
   //    open — even if a previously stored/static token has since expired. One-time
@@ -173,7 +178,14 @@ async function getToken(ssoToken?: string, force = false): Promise<string> {
   //    already consumed / expired), fall through to the other sources.
   if (ssoToken && ssoToken !== lastSso) {
     try {
-      const t = await resolveProvided(ssoToken); // sets cachedToken + persists
+      // Requests fired together on page load (windowed batches + live readings)
+      // share ONE exchange — racing exchanges of a one-time token would fail.
+      let pending = inflightSso.get(ssoToken);
+      if (!pending) {
+        pending = resolveProvided(ssoToken).finally(() => inflightSso.delete(ssoToken));
+        inflightSso.set(ssoToken, pending);
+      }
+      const t = await pending; // sets cachedToken + persists
       lastSso = ssoToken;
       return t;
     } catch {
@@ -181,20 +193,25 @@ async function getToken(ssoToken?: string, force = false): Promise<string> {
     }
   }
 
-  // On a forced refresh (after a 401) drop the token that just failed.
-  if (force) cachedToken = null;
+  // On a refresh after a 401, drop the cached Bearer only if it IS the token
+  // that failed — a direct open's expired static token must not wipe the Bearer
+  // a live portal session is still using.
+  if (failed && cachedToken === failed) cachedToken = null;
+  if (failed && failed === STATIC_TOKEN) staticDead = true;
 
   // 2. Within an active SSO session, reuse the Bearer we exchanged for it (keeps
   //    a portal session consistent and independent of any static token).
-  if (!force && ssoToken && ssoToken === lastSso && cachedToken) return cachedToken;
+  if (ssoToken && ssoToken === lastSso && cachedToken) return cachedToken;
 
   // 3. Static env token (IOSENSE_TOKEN) — the source of truth for direct,
   //    non-portal opens.
-  if (STATIC_TOKEN) return STATIC_TOKEN;
+  //    Skipped when it is the token that just failed (expired), so the retry
+  //    can fall through to a Bearer a portal open exchanged and saved.
+  if (STATIC_TOKEN && !staticDead) return STATIC_TOKEN;
 
   // 4. Any previously-exchanged Bearer (memory, then disk).
   if (!cachedToken) cachedToken = loadPersistedToken();
-  if (cachedToken) return cachedToken;
+  if (cachedToken && cachedToken !== failed) return cachedToken;
 
   throw new Error(
     "No IOsense token. Open the dashboard via the IOsense portal (…?ssoToken=…) or set IOSENSE_TOKEN.",
@@ -206,10 +223,55 @@ function markTokenGood(token: string): void {
   if (token && token !== STATIC_TOKEN) persistToken(token);
 }
 
+// IOsense caps getAutoDownSampledData at 100 devices per 30-second window per
+// account. Over the cap it answers HTTP 200 with success:false ("Device rate
+// limit exceeded … Retry after N seconds") — which used to read as empty data, so
+// most consumption cards went NA. Every chunk therefore passes through one
+// server-wide device budget, and a refusal that still slips through (the budget
+// is shared with other clients on the account) waits the advised time and retries.
+const RATE_WINDOW_MS = 30_000;
+const RATE_MAX_DEVICES = 90; // headroom below the API's 100
+const RATE_MAX_RETRIES = 4;
+const spent: { t: number; n: number }[] = [];
+let rateGate: Promise<void> = Promise.resolve();
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+// Resolves once `n` more devices fit in the current 30 s budget (FIFO).
+function acquireDevices(n: number): Promise<void> {
+  const turn = rateGate.then(async () => {
+    for (;;) {
+      const now = Date.now();
+      while (spent.length && now - spent[0].t >= RATE_WINDOW_MS) spent.shift();
+      const used = spent.reduce((a, x) => a + x.n, 0);
+      if (spent.length === 0 || used + n <= RATE_MAX_DEVICES) {
+        spent.push({ t: now, n });
+        return;
+      }
+      await sleep(spent[0].t + RATE_WINDOW_MS - now + 50);
+    }
+  });
+  rateGate = turn.catch(() => {});
+  return turn;
+}
+
 async function putChunk(
   devConfig: DevCfg[],
   token: string,
 ): Promise<SensorPoint[]> {
+  const devices = new Set(devConfig.map((d) => d.devID)).size;
+  for (let attempt = 0; ; attempt++) {
+    await acquireDevices(devices);
+    const r = await putChunkOnce(devConfig, token);
+    if (r.retryAfterMs == null) return r.data;
+    if (attempt >= RATE_MAX_RETRIES) throw new Error("IOsense device rate limit exceeded");
+    await sleep(r.retryAfterMs);
+  }
+}
+
+async function putChunkOnce(
+  devConfig: DevCfg[],
+  token: string,
+): Promise<{ data: SensorPoint[]; retryAfterMs?: number }> {
   // IOsense hangs on a raw token — the Bearer prefix is mandatory.
   const auth = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
   const res = await fetch(`${BASE}/account/widget/getAutoDownSampledData`, {
@@ -229,7 +291,14 @@ async function putChunk(
   }
   if (!res.ok) throw new Error(`IOsense API ${res.status}`);
   const json = await res.json().catch(() => ({}));
-  return (json?.data ?? []) as SensorPoint[];
+  if (json?.success === false) {
+    const msg = String(json?.errors?.join(", ") ?? "");
+    if (/rate limit/i.test(msg)) {
+      const secs = Number(msg.match(/retry after (\d+)/i)?.[1] ?? 30);
+      return { data: [], retryAfterMs: secs * 1000 + 250 };
+    }
+  }
+  return { data: (json?.data ?? []) as SensorPoint[] };
 }
 
 /** Fetch all device/sensor pairs over a window (chunked, parallel, with one
@@ -292,6 +361,9 @@ export async function fetchSensorsServer(
     const first = await fetchInChunks(devConfig, CHUNK, token);
     absorb(first.out);
     let auth401 = first.auth401;
+    // Token rejected outright → let the caller refresh it; shrinking retries
+    // would only burn the device rate budget on the same dead token.
+    if (auth401 && got.size === 0) return { out: [], auth401 };
 
     // Retry only the pairs that returned no series, shrinking the chunk each round.
     for (const size of [8, 3]) {
@@ -307,7 +379,7 @@ export async function fetchSensorsServer(
   let token = await getToken(ssoToken);
   let { out, auth401 } = await run(token);
   if (auth401 && out.length === 0) {
-    token = await getToken(ssoToken, true); // token expired → refresh once
+    token = await getToken(ssoToken, token); // token expired → refresh once
     ({ out, auth401 } = await run(token));
   }
   // Persist the token only once it has actually returned data (never junk).
@@ -322,41 +394,57 @@ export interface LastDP {
   value: number;
 }
 
-/** Latest data point per sensor, independent of any time window — used as a
- *  fallback so the tooltip/timestamp still show the most recent reading even
- *  when the selected window has no data. Best-effort (returns [] on failure). */
+/** Latest data point per sensor, independent of any time window. Live cards
+ *  read their value from this; consumption cards use it as a fallback so the
+ *  tooltip/timestamp still show the most recent reading when the selected window
+ *  has no data. Best-effort (returns [] on failure) unless `strict`, which
+ *  throws — so an expired token surfaces as an auth error, not as "no data". */
 export async function fetchLastDPs(
   pairs: { devID: string; sensor: string }[],
   ssoToken?: string,
+  strict = false,
 ): Promise<LastDP[]> {
   if (pairs.length === 0) return [];
-  try {
-    const token = await getToken(ssoToken);
-    const auth = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
-    const res = await fetch(
-      `${BASE}/account/deviceData/getLastDPsofDevicesAndSensorProcessed`,
-      {
-        method: "PUT",
-        headers: {
-          Authorization: auth,
-          organisation: ORG,
-          "ngsw-bypass": "true",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          devices: pairs.map((p) => ({ devID: p.devID, sensor: p.sensor })),
-        }),
+  const call = (token: string) =>
+    fetch(`${BASE}/account/deviceData/getLastDPsofDevicesAndSensorProcessed`, {
+      method: "PUT",
+      headers: {
+        // IOsense hangs on a raw token — the Bearer prefix is mandatory.
+        Authorization: token.startsWith("Bearer ") ? token : `Bearer ${token}`,
+        organisation: ORG,
+        "ngsw-bypass": "true",
+        "Content-Type": "application/json",
       },
-    );
-    if (!res.ok) return [];
+      body: JSON.stringify({
+        devices: pairs.map((p) => ({ devID: p.devID, sensor: p.sensor })),
+      }),
+    });
+  const isAuthFail = (r: Response) => r.status === 401 || r.status === 403;
+  try {
+    let token = await getToken(ssoToken);
+    let res = await call(token);
+    if (isAuthFail(res)) {
+      token = await getToken(ssoToken, token); // token expired → refresh once
+      res = await call(token);
+    }
+    if (isAuthFail(res)) {
+      throw new Error(
+        "IOsense session expired (unauthorized). Open the dashboard via the IOsense portal or refresh IOSENSE_TOKEN.",
+      );
+    }
+    if (!res.ok) throw new Error(`IOsense API ${res.status}`);
     const json = await res.json().catch(() => ({}));
-    return ((json?.data ?? []) as Array<Record<string, unknown>>).map((d) => ({
-      devID: String(d.devID),
-      sensor: String(d.sensor),
-      time: String(d.time),
-      value: Number(d.value),
-    }));
-  } catch {
+    markTokenGood(token);
+    // A sensor that has never reported comes back as time/value "N/A" — drop it
+    // so it reads as "no data" rather than a NaN reading at an invalid time.
+    return ((json?.data ?? []) as Array<Record<string, unknown>>).flatMap((d) => {
+      const time = String(d.time);
+      const value = Number(d.value);
+      if (!Number.isFinite(value) || Number.isNaN(Date.parse(time))) return [];
+      return [{ devID: String(d.devID), sensor: String(d.sensor), time, value }];
+    });
+  } catch (err) {
+    if (strict) throw err;
     return [];
   }
 }

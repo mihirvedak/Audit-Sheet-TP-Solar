@@ -332,17 +332,24 @@ export default function TimeRangePicker({
     setEndDateText(fmtDateInput(e));
   }
 
-  // Initialise the draft from the committed value every time we open.
-  useEffect(() => {
-    if (!open) return;
-    setDraftStart(value.start);
-    setDraftEnd(value.end);
-    setPeriodicity(value.periodicity);
-    setPreset(value.presetLabel);
-    setViewMonth(startOfMonth(value.start));
-    setSelectStep("start");
-    syncTexts(value.start, value.end);
-  }, [open, value]);
+  // Initialise the draft from the committed value every time we open (in the
+  // click, so the panel's first frame already shows it). A preset is
+  // re-evaluated against the CURRENT clock, so a now-anchored window (Today,
+  // Current Month, …) shows the actual current time as its End Time — not the
+  // moment it was last applied (e.g. when the dashboard was opened).
+  function toggleOpen() {
+    if (!open) {
+      const r = computeRange(value.presetLabel, new Date()) ?? value; // Custom → as applied
+      setDraftStart(r.start);
+      setDraftEnd(r.end);
+      setPeriodicity(value.periodicity);
+      setPreset(value.presetLabel);
+      setViewMonth(startOfMonth(r.start));
+      setSelectStep("start");
+      syncTexts(r.start, r.end);
+    }
+    setOpen(!open);
+  }
 
   // Position the panel under the trigger, and close on outside click.
   useEffect(() => {
@@ -450,7 +457,11 @@ export default function TimeRangePicker({
   }
 
   function apply() {
-    const [s, e] = draftStart <= draftEnd ? [draftStart, draftEnd] : [draftEnd, draftStart];
+    // A preset (any manual edit switches to Custom) is committed as of the
+    // moment Apply is clicked, so "Today" etc. end at the current time.
+    const r = computeRange(preset, new Date());
+    const [ds, de] = r ? [r.start, r.end] : [draftStart, draftEnd];
+    const [s, e] = ds <= de ? [ds, de] : [de, ds];
     onApply({ start: s, end: e, periodicity, presetLabel: preset });
     setOpen(false);
   }
@@ -465,7 +476,7 @@ export default function TimeRangePicker({
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggleOpen}
         className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm shadow-sm transition hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900"
       >
         <span className="text-zinc-500 dark:text-zinc-400">Duration :</span>

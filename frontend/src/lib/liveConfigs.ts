@@ -122,3 +122,66 @@ export const LIVE_CONFIGS: Record<number, LiveConfig> = {
   145: latest("TPSGCPCH_A14", "D60"), // TANK-TXCDTM-A-001
   146: latest("TPSGCPCH_A14", "D64"), // TANK-TXCDTM-B-002
 };
+
+// PGS Live tab — keyed by card LABEL (PGS cards are numbered after the sheet
+// rows, so a label key can't drift). Only rows with both device and sensor in
+// the PGS config sheet are mapped; the rest stay unconfigured (NA).
+const pgs = (n: number) => `TPSGCPGS_A${n}`;
+export const PGS_LIVE_CONFIGS: Record<string, LiveConfig> = {
+  // SIL — A3
+  SIL_P1_IN: latest(pgs(3), "D1"),
+  SIL_P1_OUT: latest(pgs(3), "D0"),
+  SIL_P2_IN: latest(pgs(3), "D3"),
+  SIL_P2_OUT: latest(pgs(3), "D2"),
+  SIL_P3_IN: latest(pgs(3), "D5"),
+  SIL_P3_OUT: latest(pgs(3), "D4"),
+  // NH3 — A1
+  NH3_P1_IN: latest(pgs(1), "D1"),
+  NH3_P1_OUT: latest(pgs(1), "D0"),
+  NH3_P2_IN: latest(pgs(1), "D3"),
+  NH3_P2_OUT: latest(pgs(1), "D2"),
+  NH3_P3_IN: latest(pgs(1), "D5"),
+  NH3_P3_OUT: latest(pgs(1), "D4"),
+  // NO2 — A2
+  NO2_P1_IN: latest(pgs(2), "D1"),
+  NO2_P1_OUT: latest(pgs(2), "D0"),
+  NO2_P2_IN: latest(pgs(2), "D3"),
+  NO2_P2_OUT: latest(pgs(2), "D2"),
+  NO2_P3_IN: latest(pgs(2), "D5"),
+  NO2_P3_OUT: latest(pgs(2), "D4"),
+  // TMA — A8
+  TMA_P1_IN: latest(pgs(8), "D0"),
+  TMA_P1_OUT: latest(pgs(8), "D1"),
+  TMA_P2_STS: latest(pgs(8), "D3"),
+  TMA_P2_IN: latest(pgs(8), "D3"),
+  TMA_P2_OUT: latest(pgs(8), "D4"),
+  // CH4 — A4
+  CH4_P1_IN: latest(pgs(4), "D1"),
+  CH4_P1_OUT: latest(pgs(4), "D0"),
+  CH4_P2_IN: latest(pgs(4), "D3"),
+  CH4_P2_OUT: latest(pgs(4), "D2"),
+  // H2 — A5
+  H2_P1_IN: latest(pgs(5), "D1"),
+  H2_P1_OUT: latest(pgs(5), "D0"),
+  H2_P2_IN: latest(pgs(5), "D3"),
+  H2_P2_OUT: latest(pgs(5), "D2"),
+  // PH3 — A6
+  PH3_P1_IN1: latest(pgs(6), "D2"),
+  PH3_P1_IN2: latest(pgs(6), "D1"),
+  PH3_P1_OUT: latest(pgs(6), "D0"),
+  PH3_P2_IN1: latest(pgs(6), "D5"),
+  PH3_P2_IN2: latest(pgs(6), "D4"),
+  PH3_P2_OUT: latest(pgs(6), "D3"),
+  // AR — A7
+  AR_P1_IN1: latest(pgs(7), "D1"),
+  AR_P1_IN2: latest(pgs(7), "D0"),
+  AR_P1_OUT: latest(pgs(7), "D2"),
+  AR_P2_IN1: latest(pgs(7), "D4"),
+  AR_P2_IN2: latest(pgs(7), "D3"),
+  AR_P2_OUT: latest(pgs(7), "D5"),
+  // BCL3 — A9
+  BCL3_P1_IN: latest(pgs(9), "D6"),
+  BCL3_P1_OUT: latest(pgs(9), "D1"),
+  BCL3_P2_IN: latest(pgs(9), "D0"),
+  BCL3_P2_OUT: latest(pgs(9), "D7"),
+};

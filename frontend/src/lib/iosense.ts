@@ -191,6 +191,39 @@ export async function fetchSensors(
   return { map: out, lastDPs, errors };
 }
 
+/**
+ * Latest data point per device/sensor pair (window-independent) — what live
+ * cards display. One call via /api/iosense in "latest" mode; an auth/network
+ * failure comes back as `error` (never as an empty "no data" result).
+ */
+export async function fetchLatest(
+  pairs: { devID: string; sensor: string }[],
+): Promise<{ lastDPs: LastDPMap; error?: string }> {
+  const lastDPs: LastDPMap = new Map();
+  try {
+    const res = await fetch("/api/iosense", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pairs, latest: true, ssoToken: readSsoToken() }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) return { lastDPs, error: json?.error || `proxy error ${res.status}` };
+    for (const d of (json?.lastDPs ?? []) as Array<{
+      devID: string;
+      sensor: string;
+      time: string;
+      value: number;
+    }>) {
+      lastDPs.set(key(d.devID, d.sensor), { ts: d.time, val: d.value });
+    }
+    return { lastDPs };
+  } catch (e) {
+    const error = String((e as Error)?.message ?? e);
+    console.error("[IOsense] latest-reading fetch error:", error);
+    return { lastDPs, error };
+  }
+}
+
 // Cumulative meter consumption over the window = last − first.
 function cumulativeDelta(p?: SensorPoint): number {
   if (!p?.data) return 0;
@@ -542,26 +575,6 @@ export function computeFormulaValue(
   return (Math.round(total * 100) / 100).toString();
 }
 
-/** Compute a live card's value: latest reading, average, (avg/6.5)×100, or constant. */
-export function computeLiveValue(
-  card: CardItem,
-  map: Map<string, SensorPoint>,
-): string {
-  const cfg = card.liveConfig;
-  if (!cfg) return "NA";
-  if (cfg.op === "constant") return String(cfg.constant ?? "NA");
-  const vals = cfg.sensors
-    .map((s) => latestValue(map.get(key(s.device, s.sensor))))
-    .filter((v): v is number => v != null);
-  if (vals.length === 0) return "NA";
-  const round2 = (n: number) => (Math.round(n * 100) / 100).toString();
-  if (cfg.op === "latest") return round2(vals[0]);
-  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-  if (cfg.op === "average") return round2(avg);
-  if (cfg.op === "scalePct") return round2((avg / 6.5) * 100);
-  return "NA";
-}
-
 /** Per-sensor detail for the info tooltip. */
 export interface SensorBreakdown {
   device: string;
@@ -573,6 +586,81 @@ export interface SensorBreakdown {
   lastVal: number | null;
   consumption: number; // last−first, except divisor (production) = sum
   hasData: boolean;
+  /** Live cards: the sensor's latest reading is older than LIVE_FRESH_MS (or absent). */
+  stale?: boolean;
+}
+
+// A live reading at most this old is "fresh"; past it the sensor counts as
+// silent and its card gets a red border (still showing its last reading).
+export const LIVE_FRESH_MS = 60 * 60_000; // 1 hour
+
+export interface LiveReading {
+  /** Displayed value — from fresh readings, else the last readings received ("NA" if none ever). */
+  value: string;
+  /** Timestamp of the reading shown. */
+  ts: string | null;
+  /** True when any of the card's sensors has no reading in the last hour. */
+  stale: boolean;
+  /** Per-sensor latest reading for the ⓘ popover. */
+  rows: SensorBreakdown[];
+}
+
+/**
+ * A live card's reading from each sensor's latest data point: latest value,
+ * average, (avg/6.5)×100, or constant. Readings within LIVE_FRESH_MS of `nowMs`
+ * are preferred; with none fresh, the last readings received are shown instead.
+ * If any sensor has no fresh reading the card is flagged stale.
+ */
+export function liveReading(
+  card: CardItem,
+  lastDPs: LastDPMap,
+  nowMs: number,
+): LiveReading {
+  const cfg = card.liveConfig;
+  if (!cfg) return { value: "NA", ts: null, stale: false, rows: [] };
+  if (cfg.op === "constant")
+    return { value: String(cfg.constant ?? "NA"), ts: null, stale: false, rows: [] };
+
+  const rows: SensorBreakdown[] = cfg.sensors.map((s) => {
+    const dp = lastDPs.get(key(s.device, s.sensor));
+    const t = dp ? Date.parse(dp.ts) : NaN;
+    return {
+      device: s.device,
+      sensor: s.sensor,
+      role: "numerator",
+      firstTs: null,
+      firstVal: null,
+      lastTs: dp?.ts ?? null,
+      lastVal: dp?.val ?? null,
+      consumption: 0,
+      hasData: !!dp,
+      stale: Number.isNaN(t) || nowMs - t > LIVE_FRESH_MS,
+    };
+  });
+  const newestTs = (rs: SensorBreakdown[]) =>
+    rs.reduce<string | null>(
+      (m, r) => (r.lastTs && (!m || Date.parse(r.lastTs) > Date.parse(m)) ? r.lastTs : m),
+      null,
+    );
+
+  const fresh = rows.filter((r) => !r.stale);
+  const stale = fresh.length < rows.length;
+  // No fresh reading → fall back to the last data each sensor ever sent.
+  const used = fresh.length > 0 ? fresh : rows.filter((r) => r.hasData);
+  if (used.length === 0) return { value: "NA", ts: null, stale, rows };
+
+  const vals = used.map((r) => r.lastVal as number);
+  const round2 = (n: number) => (Math.round(n * 100) / 100).toString();
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const value =
+    cfg.op === "latest"
+      ? round2(vals[0])
+      : cfg.op === "average"
+        ? round2(avg)
+        : cfg.op === "scalePct"
+          ? round2((avg / 6.5) * 100)
+          : "NA";
+  return { value, ts: newestTs(used), stale, rows };
 }
 
 function detail(
@@ -654,12 +742,6 @@ export function breakdownForCard(
       for (const t of cfg.denominator)
         rows.push(detail(t.device, t.sensor, "denominator", map, lastMap, ctx));
     return rows;
-  }
-  if (card.liveConfig) {
-    // Live cards: show each sensor's latest reading (the "Last" column).
-    return card.liveConfig.sensors.map((s) =>
-      detail(s.device, s.sensor, "numerator", map, lastMap),
-    );
   }
   if (card.formula?.kind === "cdaSec") {
     // CDA SEC: numerator meter rows (consumption) + flow rows (avg, hrs, m³).
