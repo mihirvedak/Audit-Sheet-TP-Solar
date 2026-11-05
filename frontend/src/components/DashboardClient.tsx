@@ -416,7 +416,7 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
-                className={`flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition ${
+                className={`flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-bold transition ${
                   tab === t.id
                     ? "border-indigo-500 text-indigo-600 dark:border-indigo-400 dark:text-indigo-300"
                     : "border-transparent text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
@@ -424,7 +424,7 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
               >
                 {t.label}
                 <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                  className={`rounded-full px-2 py-0.5 text-xs font-bold ${
                     tab === t.id
                       ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300"
                       : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
