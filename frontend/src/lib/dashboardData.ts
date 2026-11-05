@@ -217,31 +217,38 @@ const RAW: string[] = [
 // these cards show NA until a config is added for their row. Live sensors come
 // from PGS_LIVE_CONFIGS (keyed by label).
 const PGS_LIVE: string[] = [
-  "SIL_P1_STS", "SIL_P1_IN", "SIL_P1_OUT", "SIL_P2_STS", "SIL_P2_IN", "SIL_P2_OUT", "SIL_P3_STS", "SIL_P3_IN", "SIL_P3_OUT",
-  "NH3_P1_STS", "NH3_P1_IN", "NH3_P1_OUT", "NH3_P2_STS", "NH3_P2_IN", "NH3_P2_OUT", "NH3_P3_STS", "NH3_P3_IN", "NH3_P3_OUT",
-  "NO2_P1_STS", "NO2_P1_IN", "NO2_P1_OUT", "NO2_P2_STS", "NO2_P2_IN", "NO2_P2_OUT", "NO2_P3_STS", "NO2_P3_IN", "NO2_P3_OUT",
-  "TMA_P1_STS", "TMA_P1_IN", "TMA_P1_OUT", "TMA_P2_STS", "TMA_P2_IN", "TMA_P2_OUT",
-  "CH4_P1_STS", "CH4_P1_IN", "CH4_P1_OUT", "CH4_P2_STS", "CH4_P2_IN", "CH4_P2_OUT",
-  "H2_P1_STS", "H2_P1_IN", "H2_P1_OUT", "H2_P2_STS", "H2_P2_IN", "H2_P2_OUT",
-  "PH3_P1_STS", "PH3_P1_IN1", "PH3_P1_IN2", "PH3_P1_OUT", "PH3_P2_STS", "PH3_P2_IN1", "PH3_P2_IN2", "PH3_P2_OUT",
-  "AR_P1_STS", "AR_P1_IN1", "AR_P1_IN2", "AR_P1_OUT", "AR_P2_STS", "AR_P2_IN1", "AR_P2_IN2", "AR_P2_OUT",
-  "BCL3_P1_STS", "BCL3_P1_IN", "BCL3_P1_OUT", "BCL3_P2_STS", "BCL3_P2_IN", "BCL3_P2_OUT",
+  "SIL_CONS_01", "AR_CONS_01",
+  "SIL_P1_STS1", "SIL_P1_STS2", "SIL_P1_IN", "SIL_P1_OUT",
+  "SIL_P2_STS1", "SIL_P2_STS2", "SIL_P2_IN", "SIL_P2_OUT",
+  "SIL_P3_STS1", "SIL_P3_STS2", "SIL_P3_IN", "SIL_P3_OUT",
+  "NH3_P1_STS1", "NH3_P1_STS2", "NH3_P1_IN", "NH3_P1_OUT",
+  "NH3_P2_STS1", "NH3_P2_STS2", "NH3_P2_IN", "NH3_P2_OUT",
+  "NH3_P3_STS1", "NH3_P3_STS2", "NH3_P3_IN", "NH3_P3_OUT",
+  "NO2_P1_STS1", "NO2_P1_STS2", "NO2_P1_IN", "NO2_P1_OUT",
+  "NO2_P2_STS1", "NO2_P2_STS2", "NO2_P2_IN", "NO2_P2_OUT",
+  "NO2_P3_STS1", "NO2_P3_STS2", "NO2_P3_IN", "NO2_P3_OUT",
+  "TMA_P1_STS1", "TMA_P1_STS2", "TMA_P1_IN", "TMA_P1_OUT",
+  "TMA_P2_STS1", "TMA_P2_STS2", "TMA_P2_IN", "TMA_P2_OUT",
+  "CH4_P1_STS1", "CH4_P1_STS2", "CH4_P1_IN", "CH4_P1_OUT",
+  "CH4_P2_STS1", "CH4_P2_STS2", "CH4_P2_IN", "CH4_P2_OUT",
+  "H2_P1_STS1", "H2_P1_STS2", "H2_P1_IN", "H2_P1_OUT",
+  "H2_P2_STS1", "H2_P2_STS2", "H2_P2_IN", "H2_P2_OUT",
+  "PH3_P1_STS1", "PH3_P1_STS2", "PH3_P1_IN1", "PH3_P1_IN2", "PH3_P1_OUT",
+  "PH3_P2_STS1", "PH3_P2_STS2", "PH3_P2_IN1", "PH3_P2_IN2", "PH3_P2_OUT",
+  "AR_P1_STS1", "AR_P1_STS2", "AR_P1_IN1", "AR_P1_IN2", "AR_P1_OUT",
+  "AR_P2_STS1", "AR_P2_STS2", "AR_P2_IN1", "AR_P2_IN2", "AR_P2_OUT",
+  "BCL3_P1_STS1", "BCL3_P1_STS2", "BCL3_P1_IN", "BCL3_P1_OUT",
+  "BCL3_P2_STS1", "BCL3_P2_STS2", "BCL3_P2_IN", "BCL3_P2_OUT",
 ];
 
-// PGS Live display units, per row of the PGS config sheet: psi by default,
-// with the sheet's "Online/Standby" and "bar" rows listed explicitly.
-const PGS_ONLINE_STANDBY = [
-  "SIL_P1_OUT", "SIL_P2_OUT", "SIL_P3_OUT", "NH3_P1_OUT", "NH3_P2_OUT", "NH3_P3_OUT",
-  "NO2_P1_OUT", "NO2_P2_OUT", "NO2_P3_OUT", "TMA_P1_OUT", "TMA_P2_OUT",
-  "CH4_P1_OUT", "CH4_P2_OUT", "H2_P1_OUT", "H2_P2_OUT",
-  "PH3_P1_IN2", "PH3_P2_IN1", "AR_P1_IN1", "AR_P2_IN1", "BCL3_P1_IN", "BCL3_P2_OUT",
-];
+// PGS Live display units, per the PGS config sheet: psi on the pressure cards, no
+// unit on the STS1/STS2 status cards, kg / m³ on the two consumption cards.
 const PGS_LIVE_UNIT: Record<string, string> = {
-  ...Object.fromEntries(PGS_ONLINE_STANDBY.map((l) => [l, "Online/Standby"])),
-  CH4_P2_STS: "bar",
-  CH4_P2_IN: "bar",
+  SIL_CONS_01: "kg",
+  AR_CONS_01: "m³",
 };
 function pgsLiveUnit(label: string): string {
+  if (/_STS[12]$/.test(label)) return "";
   return PGS_LIVE_UNIT[label] ?? "psi";
 }
 

@@ -23,15 +23,15 @@ the fetch method used.
   sensors when any exist, else the last readings of all sensors.
 - This endpoint does **not** count toward the device rate limit below (verified
   2026-09-28: 5 × 24-device calls, windowed call still accepted).
-- **PGS Live tab** (rows 166–232) uses the same endpoint, configured by label in
-  `PGS_LIVE_CONFIGS` ([`liveConfigs.ts`](frontend/src/lib/liveConfigs.ts)):
-  47 cards on devices `TPSGCPGS_A1…A9` (SIL→A3, NH3→A1, NO2→A2, TMA→A8,
-  CH4→A4, H2→A5, PH3→A6, AR→A7, BCL3→A9). Units follow the sheet row-for-row
-  (`PGS_LIVE_UNIT` in dashboardData.ts): **psi** by default, **Online/Standby**
-  on 21 cards, **bar** on CH4_P2_STS/IN. Pump-status cards have no sensor in the sheet → NA, except
-  `TMA_P2_STS` = A8·D3 (same pair as `TMA_P2_IN`). `NO2_P2_STS` (D3) and
-  `NO2_P3_STS` (D4) list a sensor but no device → left unconfigured.
-- **PGS Consumption tab** (rows 233–247) is windowed (`getAutoDownSampledData`),
+- **PGS Live tab** (rows 166–255, 90 cards) uses the same endpoint, configured by
+  label in `PGS_LIVE_CONFIGS` ([`liveConfigs.ts`](frontend/src/lib/liveConfigs.ts)):
+  86 cards on devices `TPSGCPGS_A1…A9` (SIL→A3, NH3→A1, NO2→A2, TMA→A8,
+  CH4→A4, H2→A5, PH3→A6, AR→A7, BCL3→A9). Card names, sensors and units follow
+  "Audit sheet PGS.pdf" (2026-11-05) row for row (`PGS_LIVE_UNIT` in
+  dashboardData.ts): **psi** on pressure cards, no unit on `*_STS1`/`*_STS2`.
+  `BCL3_P1_STS1/STS2` (device but no sensor) and `SIL_CONS_01` (kg) /
+  `AR_CONS_01` (m³) have no config → NA.
+- **PGS Consumption tab** (rows 256–270) is windowed (`getAutoDownSampledData`),
   configured by label in `PGS_CONSUMPTION_CONFIGS`
   ([`cardConfigs.ts`](frontend/src/lib/cardConfigs.ts)), `op: "latest"` = latest
   weight in the window: TMA_WT_01/02 = A8·D2/D5, BCL3_WT_01–04 = A9·D2–D5 (kg).
