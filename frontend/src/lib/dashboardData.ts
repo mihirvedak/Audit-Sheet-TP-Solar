@@ -217,7 +217,6 @@ const RAW: string[] = [
 // these cards show NA until a config is added for their row. Live sensors come
 // from PGS_LIVE_CONFIGS (keyed by label).
 const PGS_LIVE: string[] = [
-  "SIL_CONS_01", "AR_CONS_01",
   "SIL_P1_STS1", "SIL_P1_STS2", "SIL_P1_IN", "SIL_P1_OUT",
   "SIL_P2_STS1", "SIL_P2_STS2", "SIL_P2_IN", "SIL_P2_OUT",
   "SIL_P3_STS1", "SIL_P3_STS2", "SIL_P3_IN", "SIL_P3_OUT",
@@ -242,14 +241,9 @@ const PGS_LIVE: string[] = [
 ];
 
 // PGS Live display units, per the PGS config sheet: psi on the pressure cards, no
-// unit on the STS1/STS2 status cards, kg / m³ on the two consumption cards.
-const PGS_LIVE_UNIT: Record<string, string> = {
-  SIL_CONS_01: "kg",
-  AR_CONS_01: "m³",
-};
+// unit on the STS1/STS2 status cards.
 function pgsLiveUnit(label: string): string {
-  if (/_STS[12]$/.test(label)) return "";
-  return PGS_LIVE_UNIT[label] ?? "psi";
+  return /_STS[12]$/.test(label) ? "" : "psi";
 }
 
 const PGS_CONSUMPTION: string[] = [

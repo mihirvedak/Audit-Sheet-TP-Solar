@@ -125,8 +125,8 @@ export const LIVE_CONFIGS: Record<number, LiveConfig> = {
 
 // PGS Live tab — keyed by card LABEL (PGS cards are numbered after the sheet
 // rows, so a label key can't drift). Only rows with both device and sensor in
-// the PGS config sheet are mapped; the rest stay unconfigured (NA), including
-// BCL3_P1_STS1/STS2 (device but no sensor) and SIL/AR_CONS_01 (no device).
+// the PGS config sheet are mapped; BCL3_P1_STS1/STS2 (device but no sensor) stay
+// unconfigured (NA).
 const pgs = (n: number) => `TPSGCPGS_A${n}`;
 export const PGS_LIVE_CONFIGS: Record<string, LiveConfig> = {
   // SIL — A3
