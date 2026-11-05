@@ -327,7 +327,7 @@ export default function DashboardClient({ cards }: { cards: CardItem[] }) {
               </span>
               {staleCount > 0 && (
                 <span
-                  className="rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 dark:bg-red-500/15 dark:text-red-300"
+                  className="rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 dark:bg-red-500/15 dark:text-red-300"
                   title="Cards whose sensor has sent no data in the last 1 hour"
                 >
                   {`${staleCount} no data > 1 h`}
