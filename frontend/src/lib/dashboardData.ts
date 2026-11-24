@@ -251,8 +251,16 @@ const PGS_CONSUMPTION: string[] = [
   "TMA_WT_01", "TMA_WT_02", "BCL3_WT_01", "BCL3_WT_02", "BCL3_WT_03", "BCL3_WT_04", "SIL_CONS_01", "AR_CONS_01",
 ];
 
-// PGS Consumption display units (per config sheet): kg, except PH3/AR in m³.
-const PGS_CONSUMPTION_UNIT: Record<string, string> = { PH3_CONS_01: "m³", AR_CONS_01: "m³" };
+// PGS Consumption display units: kg by default, kL on the TPSGCPGS_B1 gas
+// totalisers, m³ on AR_CONS_01.
+const PGS_CONSUMPTION_UNIT: Record<string, string> = {
+  NH3_CONS_01: "kL",
+  N2O_CONS_01: "kL",
+  CH4_CONS_01: "kL",
+  H2_CONS_01: "kL",
+  PH3_CONS_01: "kL",
+  AR_CONS_01: "m³",
+};
 
 /* ------------------------------------------------------------------ */
 /* Tab categorisation (by tag pattern)                                 */

@@ -749,6 +749,12 @@ const pgsConsumption = (token: string): CardConfig => ({
   numerator: [term(token)],
 });
 export const PGS_CONSUMPTION_CONFIGS: Record<string, CardConfig> = {
+  // TPSGCPGS_B1 gas totalisers (kL)
+  NH3_CONS_01: pgsConsumption("TPSGCPGS_B1(D5)"),
+  N2O_CONS_01: pgsConsumption("TPSGCPGS_B1(D37)"),
+  CH4_CONS_01: pgsConsumption("TPSGCPGS_B1(D29)"),
+  H2_CONS_01: pgsConsumption("TPSGCPGS_B1(D21)"),
+  PH3_CONS_01: pgsConsumption("TPSGCPGS_B1(D44)"),
   SIL_CONS_01: pgsConsumption("TPSGCPGS_MANUAL(D0)"),
   AR_CONS_01: pgsConsumption("TPSGCPGS_MANUAL(D1)"),
   TMA_WT_01: pgsWeight("TPSGCPGS_A8(D2)"),

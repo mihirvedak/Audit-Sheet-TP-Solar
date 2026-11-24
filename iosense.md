@@ -37,9 +37,11 @@ the fetch method used.
   weight in the window: TMA_WT_01/02 = A8·D2/D5, BCL3_WT_01–04 = A9·D2–D5 (kg).
   `SIL_CONS_01` = `TPSGCPGS_MANUAL`·D0 (kg) and `AR_CONS_01` = `TPSGCPGS_MANUAL`·D1
   (m³), added 2026-11-24, use the default consumption op (last − first reading in
-  the period); not yet checked against real data (IOsense was down). The other 8
-  `*_CONS_0x` cards, including `TMA_CONS_02` (added 2026-11-24), have no sensor
-  yet → NA. Units kg, PH3/AR_CONS_01 m³.
+  the period); the device exists but had sent no data as of 2026-11-24.
+  `NH3/N2O/CH4/H2/PH3_CONS_01` = `TPSGCPGS_B1`·D5/D37/D29/D21/D44 (kL), the
+  `TOT_*_TOT_REC` totalisers (cumulative, never decrease; data from 2026-11-12),
+  same default op. `TMA_CONS_01/02` and `BCL3_CONS_01` have no sensor yet → NA.
+  Units kg by default, kL on the B1 cards, m³ on AR_CONS_01.
 
 ## IOsense device rate limit (windowed data)
 - `getAutoDownSampledData` allows **100 devices per 30-second window** per
