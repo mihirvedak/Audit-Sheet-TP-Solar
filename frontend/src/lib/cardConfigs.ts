@@ -741,7 +741,16 @@ const pgsWeight = (token: string): CardConfig => ({
   op: "latest",
   numerator: [term(token)],
 });
+// Consumption over the selected period (last − first reading), like every other
+// consumption card. TPSGCPGS_MANUAL holds the manually entered SIL / AR readings.
+const pgsConsumption = (token: string): CardConfig => ({
+  metric: "consumption",
+  method: "getAutoSampled",
+  numerator: [term(token)],
+});
 export const PGS_CONSUMPTION_CONFIGS: Record<string, CardConfig> = {
+  SIL_CONS_01: pgsConsumption("TPSGCPGS_MANUAL(D0)"),
+  AR_CONS_01: pgsConsumption("TPSGCPGS_MANUAL(D1)"),
   TMA_WT_01: pgsWeight("TPSGCPGS_A8(D2)"),
   TMA_WT_02: pgsWeight("TPSGCPGS_A8(D5)"),
   BCL3_WT_01: pgsWeight("TPSGCPGS_A9(D2)"),

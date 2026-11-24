@@ -31,11 +31,15 @@ the fetch method used.
   were removed from this tab on request and stay on PGS Consumption. **psi** on
   pressure cards, no unit on `*_STS1`/`*_STS2`. `BCL3_P1_STS1/STS2` (device but
   no sensor) have no config → NA.
-- **PGS Consumption tab** (rows 254–268) is windowed (`getAutoDownSampledData`),
-  configured by label in `PGS_CONSUMPTION_CONFIGS`
-  ([`cardConfigs.ts`](frontend/src/lib/cardConfigs.ts)), `op: "latest"` = latest
+- **PGS Consumption tab** (rows 254–269, 16 cards) is windowed
+  (`getAutoDownSampledData`), configured by label in `PGS_CONSUMPTION_CONFIGS`
+  ([`cardConfigs.ts`](frontend/src/lib/cardConfigs.ts)). `op: "latest"` = latest
   weight in the window: TMA_WT_01/02 = A8·D2/D5, BCL3_WT_01–04 = A9·D2–D5 (kg).
-  The 9 `*_CONS_01` cards have no sensor yet → NA. Units kg, PH3/AR_CONS_01 m³.
+  `SIL_CONS_01` = `TPSGCPGS_MANUAL`·D0 (kg) and `AR_CONS_01` = `TPSGCPGS_MANUAL`·D1
+  (m³), added 2026-11-24, use the default consumption op (last − first reading in
+  the period); not yet checked against real data (IOsense was down). The other 8
+  `*_CONS_0x` cards, including `TMA_CONS_02` (added 2026-11-24), have no sensor
+  yet → NA. Units kg, PH3/AR_CONS_01 m³.
 
 ## IOsense device rate limit (windowed data)
 - `getAutoDownSampledData` allows **100 devices per 30-second window** per

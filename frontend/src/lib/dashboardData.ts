@@ -247,7 +247,7 @@ function pgsLiveUnit(label: string): string {
 }
 
 const PGS_CONSUMPTION: string[] = [
-  "NH3_CONS_01", "N2O_CONS_01", "TMA_CONS_01", "CH4_CONS_01", "H2_CONS_01", "PH3_CONS_01", "BCL3_CONS_01",
+  "NH3_CONS_01", "N2O_CONS_01", "TMA_CONS_01", "TMA_CONS_02", "CH4_CONS_01", "H2_CONS_01", "PH3_CONS_01", "BCL3_CONS_01",
   "TMA_WT_01", "TMA_WT_02", "BCL3_WT_01", "BCL3_WT_02", "BCL3_WT_03", "BCL3_WT_04", "SIL_CONS_01", "AR_CONS_01",
 ];
 
